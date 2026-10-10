@@ -12,6 +12,8 @@ import Button from "@mui/material/Button";
 import ArrowBackIcon from "@mui/icons-material/ArrowBack";
 import { getCustomerDetail } from "../api/customers";
 import { RiskBadge } from "../components/RiskBadge";
+import { ReasonsSection } from "../components/ReasonsSection";
+import { formatProbability, RISK_COLOR } from "../utils/format";
 import { RetentionMessagePanel } from "../components/RetentionMessagePanel";
 import { SendSmsPanel } from "../components/SendSmsPanel";
 import type { CustomerDetail } from "../types";
@@ -50,10 +52,14 @@ export function CustomerDetailPage() {
         Back
       </Button>
 
-      <Stack direction="row" spacing={2} sx={{ alignItems: "center", mb: 3 }}>
+      <Stack direction="row" sx={{ alignItems: "center", mb: 3, flexWrap: "wrap", gap: 1.5 }}>
         <Typography variant="h5">Customer #{detail.customer_id}</Typography>
         <RiskBadge level={detail.risk_level} />
-        <Chip label={`${(detail.churn_probability * 100).toFixed(1)}% churn probability`} />
+        <Chip
+          variant="outlined"
+          color={RISK_COLOR[detail.risk_level]}
+          label={`${formatProbability(detail.churn_probability)} churn probability`}
+        />
       </Stack>
 
       <Grid container spacing={2}>
@@ -63,17 +69,7 @@ export function CustomerDetailPage() {
               <Typography variant="subtitle1" gutterBottom>
                 Why this customer is at risk (SHAP)
               </Typography>
-              {detail.top_reasons.length === 0 ? (
-                <Typography variant="body2" color="text.secondary">
-                  No strong churn-risk factors identified.
-                </Typography>
-              ) : (
-                <Stack direction="row" spacing={1} sx={{ flexWrap: "wrap", gap: 1 }}>
-                  {detail.top_reasons.map((reason) => (
-                    <Chip key={reason} label={reason} color="warning" variant="outlined" />
-                  ))}
-                </Stack>
-              )}
+              <ReasonsSection riskLevel={detail.risk_level} reasons={detail.reason_impacts} />
             </CardContent>
           </Card>
 

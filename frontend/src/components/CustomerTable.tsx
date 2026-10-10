@@ -11,6 +11,7 @@ import Checkbox from "@mui/material/Checkbox";
 import Box from "@mui/material/Box";
 import { useNavigate } from "react-router-dom";
 import { RiskBadge } from "./RiskBadge";
+import { formatProbability } from "../utils/format";
 import type { CustomerSummary } from "../types";
 
 interface CustomerTableProps {
@@ -98,7 +99,7 @@ export function CustomerTable({
                   <TableCell>
                     <RiskBadge level={row.risk_level} />
                   </TableCell>
-                  <TableCell align="right">{(row.churn_probability * 100).toFixed(1)}%</TableCell>
+                  <TableCell align="right">{formatProbability(row.churn_probability)}</TableCell>
                   <TableCell align="right">{row.tenure ?? "-"}</TableCell>
                   <TableCell>{row.prefered_order_cat ?? "-"}</TableCell>
                   <TableCell align="center">{row.complain ? "Yes" : "No"}</TableCell>
