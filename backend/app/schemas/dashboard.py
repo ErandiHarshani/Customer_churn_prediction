@@ -56,6 +56,7 @@ class SmsStats(BaseModel):
     failed: int
     dry_run_count: int
     real_count: int
+    real_successful: int = 0
 
 
 class RetentionStats(BaseModel):

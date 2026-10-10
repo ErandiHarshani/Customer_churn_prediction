@@ -93,6 +93,8 @@ def get_engagement(db: Session = Depends(get_db), _user: str = Depends(get_curre
         failed=sms_count(success=False),
         dry_run_count=sms_count(dry_run=True),
         real_count=sms_count(dry_run=False),
+        # provider accepted the submission; dry-runs never reach a provider
+        real_successful=sms_count(success=True, dry_run=False),
     )
 
     def retention_count(**filters) -> int:
