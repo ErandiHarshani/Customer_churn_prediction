@@ -9,24 +9,18 @@ from app.ml.features import FEATURE_COLS
 from app.ml.predict import UnknownCategoryError, predict_and_explain
 
 NEW_CUSTOMER = {
-    "tenure": 10,
-    "city_tier": 1,
-    "warehouse_to_home": 12,
-    "preferred_login_device": "Mobile Phone",
-    "preferred_payment_mode": "Debit Card",
-    "gender": "Male",
-    "hour_spend_on_app": 3,
-    "number_of_device_registered": 4,
-    "prefered_order_cat": "Laptop & Accessory",
-    "satisfaction_score": 3,
-    "marital_status": "Married",
-    "number_of_address": 3,
-    "complain": 0,
-    "order_amount_hike_from_last_year": 15,
-    "coupon_used": 1,
-    "order_count": 2,
-    "day_since_last_order": 3,
-    "cashback_amount": 160,
+    "tenure": 1,
+    "city_tier": 3,
+    "warehouse_to_home": 30,
+    "number_of_device_registered": 5,
+    "satisfaction_score": 5,
+    "number_of_address": 8,
+    "complain": 1,
+    "day_since_last_order": 1,
+    "cashback_amount": 120,
+    "preferred_payment_mode": "Cash on Delivery",
+    "prefered_order_cat": "Mobile Phone",
+    "marital_status": "Single",
 }
 
 
@@ -46,9 +40,9 @@ def test_artifacts_are_consistent():
     assert a.meta["feature_columns"] == FEATURE_COLS
     assert a.model_name in a.metrics["models"]
     assert 0 < a.threshold_medium < a.threshold_high < 1
+    assert len(FEATURE_COLS) == 13  # 12 customer inputs + review sentiment
     # merged spellings must not exist as separate classes any more
     assert "CC" not in a.label_encoders["PreferredPaymentMode"].classes_
-    assert "Phone" not in a.label_encoders["PreferredLoginDevice"].classes_
     assert "Mobile" not in a.label_encoders["PreferedOrderCat"].classes_
 
 
@@ -57,7 +51,10 @@ def test_spelling_variants_predict_identically(dataset):
     row = dataset[dataset["PreferredPaymentMode"] == "Credit Card"].iloc[0]
     variant = row.copy()
     variant["PreferredPaymentMode"] = "CC"
-    assert predict_and_explain(row, a)["churn_probability"] == predict_and_explain(variant, a)["churn_probability"]
+    # approx: Random Forest averages trees in parallel, so the last float digit can vary
+    assert predict_and_explain(row, a)["churn_probability"] == pytest.approx(
+        predict_and_explain(variant, a)["churn_probability"], abs=1e-12
+    )
 
 
 def test_unknown_category_is_rejected(dataset):
@@ -80,7 +77,10 @@ def test_live_model_separates_churners(dataset, scores):
     churner = merged[merged["Churn"] == 1].sort_values("churn_probability").iloc[-1]
     loyal = merged[merged["Churn"] == 0].sort_values("churn_probability").iloc[0]
     assert predict_and_explain(churner, a)["risk_level"] == "high"
-    assert predict_and_explain(loyal, a)["risk_level"] == "low"
+    assert predict_and_explain(churner, a)["top_reasons"]
+    low = predict_and_explain(loyal, a)
+    assert low["risk_level"] == "low"
+    assert low["top_reasons"] == [] and low["reason_impacts"] == []
 
 
 def test_seeded_customers_use_out_of_fold_scores(client, scores):
@@ -109,13 +109,14 @@ def test_create_customer_without_review_uses_training_median(client):
     assert body["profile"]["sentiment_score"] == a.training_medians["sentiment_score"]
     assert body["profile"]["sentiment_label"] == "not provided"
     assert not any("sentiment" in r for r in body["top_reasons"])
-    assert body["risk_level"] in {"low", "medium", "high"}
+    assert body["risk_level"] == "high"
+    assert any("1 month)" in r for r in body["top_reasons"]) or body["top_reasons"]
 
 
 def test_create_customer_normalises_spelling(client):
-    resp = client.post("/api/customers", json={**NEW_CUSTOMER, "preferred_payment_mode": "CC"})
+    resp = client.post("/api/customers", json={**NEW_CUSTOMER, "preferred_payment_mode": "COD"})
     assert resp.status_code == 201, resp.text
-    assert resp.json()["profile"]["preferred_payment_mode"] == "Credit Card"
+    assert resp.json()["profile"]["preferred_payment_mode"] == "Cash on Delivery"
 
 
 @pytest.mark.parametrize(
@@ -124,3 +125,37 @@ def test_create_customer_normalises_spelling(client):
 )
 def test_create_customer_rejects_invalid_input(client, override):
     assert client.post("/api/customers", json={**NEW_CUSTOMER, **override}).status_code == 422
+
+
+def test_field_options_match_model_categories(client):
+    options = client.get("/api/customers/meta/options").json()
+    assert set(options) == {"preferred_payment_mode", "prefered_order_cat", "marital_status"}
+    assert "CC" not in options["preferred_payment_mode"]
+
+
+def test_tenure_reason_is_pluralised_correctly():
+    from app.ml.predict import describe_feature
+
+    assert describe_feature("Tenure", 1).endswith("(1 month)")
+    assert describe_feature("Tenure", 12).endswith("(12 months)")
+
+
+def test_retention_fallback_contains_banded_discount(client):
+    from app.services.gemini_service import GeminiService, discount_for
+
+    for prob, expected in [(0.5, 10), (0.8, 15), (0.95, 20)]:
+        text, discount, source = GeminiService(api_key="").generate_retention_message([], prob)
+        assert discount == expected == discount_for(prob)
+        assert f"{expected}% off" in text and len(text) <= 160 and source == "fallback"
+
+
+def test_login_stats_exposes_no_customer_ids(seeded_db):
+    from fastapi.testclient import TestClient
+
+    from app.main import app
+
+    with TestClient(app) as anonymous:
+        body = anonymous.get("/api/public/login-stats").json()
+    assert body["model_version"] == get_artifacts().model_version
+    assert body["risk_examples"]
+    assert all("customer_id" not in e for e in body["risk_examples"])
