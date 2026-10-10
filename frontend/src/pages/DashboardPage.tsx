@@ -5,7 +5,6 @@ import Card from "@mui/material/Card";
 import CardContent from "@mui/material/CardContent";
 import CardActionArea from "@mui/material/CardActionArea";
 import Typography from "@mui/material/Typography";
-import CircularProgress from "@mui/material/CircularProgress";
 import Box from "@mui/material/Box";
 import Button from "@mui/material/Button";
 import Stack from "@mui/material/Stack";
@@ -22,37 +21,48 @@ import { ChurnDistributionChart } from "../components/ChurnDistributionChart";
 import { RocCurveChart } from "../components/RocCurveChart";
 import { ModelMetricsCard } from "../components/ModelMetricsCard";
 import { EngagementAnalyticsCard } from "../components/EngagementAnalyticsCard";
+import { PageHeader } from "../components/PageHeader";
+import { ErrorState, PageSkeleton } from "../components/PageStates";
+import { IconDisc } from "../components/StatCard";
+import { apiErrorMessage } from "../utils/apiError";
 import type { DashboardSummary, EngagementAnalytics, ModelCurve } from "../types";
 
 export function DashboardPage() {
   const navigate = useNavigate();
-  const [summary, setSummary] = useState<DashboardSummary | null>(null);
-  const [curves, setCurves] = useState<ModelCurve[] | null>(null);
-  const [engagement, setEngagement] = useState<EngagementAnalytics | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [data, setData] = useState<{ summary: DashboardSummary; curves: ModelCurve[]; engagement: EngagementAnalytics } | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [retryTick, setRetryTick] = useState(0);
 
   useEffect(() => {
+    let stale = false;
     Promise.all([getDashboardSummary(), getRocCurve(), getEngagementAnalytics()])
-      .then(([summaryRes, rocRes, engagementRes]) => {
-        setSummary(summaryRes);
-        setCurves(rocRes.curves);
-        setEngagement(engagementRes);
-      })
-      .finally(() => setLoading(false));
-  }, []);
+      .then(([summary, roc, engagement]) => !stale && setData({ summary, curves: roc.curves, engagement }))
+      .catch((e) => !stale && setError(apiErrorMessage(e, "Could not load the dashboard.")));
+    return () => {
+      stale = true;
+    };
+  }, [retryTick]);
 
-  if (loading) {
+  if (error) {
     return (
-      <Box sx={{ display: "flex", justifyContent: "center", mt: 8 }}>
-        <CircularProgress />
+      <Box>
+        <PageHeader title="Dashboard" />
+        <ErrorState
+          message={error}
+          onRetry={() => {
+            setError(null);
+            setRetryTick((t) => t + 1);
+          }}
+        />
       </Box>
     );
   }
 
-  if (!summary) {
-    return <Typography color="error">Could not load dashboard data.</Typography>;
+  if (!data) {
+    return <PageSkeleton cards={4} tall={2} />;
   }
 
+  const { summary, curves, engagement } = data;
   const datasetCustomers = summary.churn_distribution.churn + summary.churn_distribution.non_churn;
   const addedCustomers = summary.total_customers - datasetCustomers;
   const datasetSubtitle =
@@ -62,12 +72,7 @@ export function DashboardPage() {
 
   return (
     <Box>
-      <Typography variant="h5" gutterBottom>
-        Dashboard Overview
-      </Typography>
-      <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>
-        Real-time summary of the churn prediction system
-      </Typography>
+      <PageHeader title="Dashboard" subtitle="Live summary of churn risk across all customers." />
 
       <Card
         variant="outlined"
@@ -114,7 +119,7 @@ export function DashboardPage() {
           <StatCard
             title="Total Customers"
             value={summary.total_customers.toLocaleString()}
-            icon={<PeopleAltIcon color="primary" />}
+            icon={<PeopleAltIcon />}
             subtitle={datasetSubtitle}
           />
         </Grid>
@@ -129,7 +134,9 @@ export function DashboardPage() {
                 <Typography variant="body2" color="text.secondary">
                   High Risk Customers
                 </Typography>
-                <WarningAmberIcon color="error" />
+                <IconDisc>
+                  <WarningAmberIcon sx={{ color: "error.main" }} />
+                </IconDisc>
               </Box>
               <Typography variant="h4" color="error" sx={{ mt: 1 }}>
                 {summary.risk_distribution.high.toLocaleString()}
@@ -146,7 +153,7 @@ export function DashboardPage() {
           <StatCard
             title="Average Churn Risk"
             value={`${(summary.predicted_churn_rate * 100).toFixed(1)}%`}
-            icon={<TrendingUpIcon color="info" />}
+            icon={<TrendingUpIcon />}
             subtitle={`predicted · actual ${(summary.actual_churn_rate * 100).toFixed(1)}%`}
           />
         </Grid>
@@ -154,7 +161,7 @@ export function DashboardPage() {
           <StatCard
             title="Model Accuracy"
             value={`${(summary.best_model_accuracy * 100).toFixed(1)}%`}
-            icon={<VerifiedIcon color="success" />}
+            icon={<VerifiedIcon />}
             subtitle={`${summary.best_model_name} · chosen by cross-validation · test set`}
           />
         </Grid>
@@ -193,7 +200,7 @@ export function DashboardPage() {
               <Typography variant="subtitle1" gutterBottom>
                 Model Performance (ROC Curve)
               </Typography>
-              {curves && <RocCurveChart curves={curves} />}
+              <RocCurveChart curves={curves} />
               <Typography variant="caption" color="text.secondary">
                 XGBoost vs Random Forest on the held-out 20% test split (never used for training
                 or model selection).
@@ -212,11 +219,9 @@ export function DashboardPage() {
         </Grid>
       </Grid>
 
-      {engagement && (
-        <Box sx={{ mt: 2 }}>
-          <EngagementAnalyticsCard data={engagement} />
-        </Box>
-      )}
+      <Box sx={{ mt: 2 }}>
+        <EngagementAnalyticsCard data={engagement} />
+      </Box>
     </Box>
   );
 }
