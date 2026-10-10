@@ -32,7 +32,7 @@ def login_stats(db: Session = Depends(get_db), artifacts: MLArtifacts = Depends(
     customer_id + churn_probability (no name/phone/PII), sourced live from the same
     DB and model artifacts the authenticated dashboard uses."""
     total = db.query(func.count(Customer.id)).scalar() or 0
-    best_auc = max((m["roc_auc"] for m in artifacts.model_comparison), default=0.0)
+    best_auc = artifacts.metrics["models"][artifacts.model_name]["roc_auc"]
 
     def pick(risk_level: str, order_desc: bool):
         q = db.query(Customer).filter(Customer.risk_level == risk_level)
