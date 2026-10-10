@@ -7,36 +7,121 @@ interface ThemeModeContextValue {
   toggleMode: () => void;
 }
 
+// v2: the app now defaults to light; a fresh key keeps old "dark" values from sticking.
+const THEME_KEY = "theme_mode_v2";
+
 const ThemeModeContext = createContext<ThemeModeContextValue | undefined>(undefined);
 
+// Strong ease-out for UI feedback (fast start = feels responsive).
+const EASE_OUT = "cubic-bezier(0.23, 1, 0.32, 1)";
+
 function buildTheme(mode: PaletteMode) {
+  const light = mode === "light";
+  // App chrome (top bar + sidebar): a soft indigo wash rather than plain white.
+  const chrome = light ? "#e8ebfb" : "#171b2b";
   return createTheme({
     palette: {
       mode,
-      primary: { main: mode === "dark" ? "#7c6cf6" : "#5b4bdb" },
-      secondary: { main: "#22c1c3" },
-      ...(mode === "dark"
-        ? {
-            background: { default: "#0f1220", paper: "#161a2e" },
-          }
-        : {}),
+      // Light, airy defaults; brand indigo kept but brightened. Text on primary
+      // buttons stays >= 4.5:1.
+      primary: light
+        ? { main: "#4f5fe0", light: "#eef0fd", dark: "#3a48c4", contrastText: "#ffffff" }
+        : { main: "#8b93ff", light: "#262b4a", dark: "#6e78f0", contrastText: "#0f1220" },
+      secondary: { main: "#13a08a" },
+      // very light brand tint behind white cards
+      background: light ? { default: "#f1f3fc", paper: "#ffffff" } : { default: "#131623", paper: "#1a1e2e" },
+      text: light
+        ? { primary: "#1d2433", secondary: "#5d6677", disabled: "#a0a7b4" }
+        : { primary: "#eceef4", secondary: "#a9b0bf", disabled: "#6c7384" },
+      divider: light ? "#e7e9f0" : "#2a2f42",
+      action: light ? { hover: "rgba(79,95,224,0.06)", selected: "rgba(79,95,224,0.10)" } : {},
     },
     shape: { borderRadius: 10 },
     typography: {
-      fontFamily: '"Inter", system-ui, sans-serif',
+      fontFamily: '"Inter", "Roboto", system-ui, -apple-system, "Segoe UI", sans-serif',
+      h5: { fontWeight: 650, letterSpacing: "-0.01em" },
+      h4: { fontWeight: 650, letterSpacing: "-0.01em" },
+      subtitle1: { fontWeight: 600 },
+      subtitle2: { fontWeight: 600 },
+      button: { textTransform: "none", fontWeight: 600 },
+    },
+    components: {
+      MuiCssBaseline: {
+        styleOverrides: { body: { WebkitFontSmoothing: "antialiased" } },
+      },
+      // Flat, light app bar instead of a heavy coloured block.
+      MuiAppBar: {
+        defaultProps: { elevation: 0, color: "inherit" },
+        styleOverrides: {
+          root: ({ theme }) => ({
+            backgroundColor: chrome,
+            color: theme.palette.text.primary,
+            borderBottom: `1px solid ${light ? "#dadff6" : theme.palette.divider}`,
+          }),
+        },
+      },
+      MuiDrawer: {
+        styleOverrides: {
+          paper: ({ theme }) => ({
+            backgroundColor: chrome,
+            borderRight: `1px solid ${light ? "#dadff6" : theme.palette.divider}`,
+          }),
+        },
+      },
+      MuiCard: {
+        styleOverrides: {
+          root: ({ theme }) => ({
+            borderColor: theme.palette.divider,
+            boxShadow: light ? "0 1px 2px rgba(16,24,40,0.04)" : "none",
+          }),
+        },
+      },
+      // Press feedback: a subtle scale tells the user the click registered.
+      MuiButton: {
+        defaultProps: { disableElevation: true },
+        styleOverrides: {
+          root: {
+            transition: `transform 160ms ${EASE_OUT}, background-color 150ms ease, border-color 150ms ease`,
+            "&:active": { transform: "scale(0.97)" },
+            "@media (prefers-reduced-motion: reduce)": { "&:active": { transform: "none" } },
+          },
+        },
+      },
+      MuiListItemButton: {
+        styleOverrides: {
+          root: ({ theme }) => ({
+            borderRadius: 8,
+            margin: "2px 8px",
+            "&.Mui-selected": {
+              backgroundColor: light ? "#ffffff" : theme.palette.action.selected,
+              boxShadow: light ? "0 1px 2px rgba(16,24,40,0.06)" : "none",
+              color: theme.palette.primary.main,
+              "& .MuiListItemIcon-root": { color: theme.palette.primary.main },
+            },
+          }),
+        },
+      },
+      MuiTableCell: {
+        styleOverrides: {
+          head: ({ theme }) => ({ fontWeight: 600, color: theme.palette.text.secondary }),
+        },
+      },
+      MuiTooltip: {
+        styleOverrides: { tooltip: { fontSize: 12 } },
+      },
     },
   });
 }
 
 export function ThemeModeProvider({ children }: { children: ReactNode }) {
   const [mode, setMode] = useState<PaletteMode>(
-    () => (localStorage.getItem("theme_mode") as PaletteMode | null) ?? "dark"
+    () => (localStorage.getItem(THEME_KEY) as PaletteMode | null) ?? "light"
   );
 
   function toggleMode() {
     setMode((prev) => {
       const next = prev === "dark" ? "light" : "dark";
-      localStorage.setItem("theme_mode", next);
+      localStorage.setItem(THEME_KEY, next);
       return next;
     });
   }
