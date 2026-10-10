@@ -68,8 +68,7 @@ def _build_customer_facts(customer: Customer) -> list[str]:
     # input — for seeded training-data customers it's a simulated linkage, not real
     if (
         not customer.review_is_synthetic
-        and customer.sentiment_label
-        and customer.sentiment_label != "neutral"
+        and customer.sentiment_label in ("negative", "positive")
     ):
         facts.append(f"their overall sentiment towards the store is {customer.sentiment_label}")
     if customer.prefered_order_cat:

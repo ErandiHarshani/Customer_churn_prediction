@@ -69,43 +69,6 @@ Return ONLY compact JSON, no markdown:
 {{"sms_text": "<the sms, <=160 chars>", "discount_percent": <int>}}
 """
 
-# Runs *after* the churn model: the review-text sentiment above is a model input,
-# this one is the customer-facing sentiment shown with the prediction results, so it
-# has to agree with what the model concluded rather than only with the review wording.
-CHURN_SENTIMENT_PROMPT = """
-You are a customer-sentiment analyst for an e-commerce store. A churn prediction
-model has already scored this customer. Estimate the customer's overall sentiment
-towards the store so that it is consistent with the prediction below.
-
-Churn probability: {prob:.0%} (risk level: {risk}; average churn in our data is ~17%)
-Top churn drivers (most important first): {reasons}
-Concrete facts about this customer: {facts}
-Customer's own review: {review}
-
-Baseline score implied by the churn probability alone: {anchor:+.2f}
-
-Rules:
-- If the customer wrote a review, the review's tone decides the sign of the score:
-  a clearly negative review must give a negative score, a clearly positive review
-  a positive score, even if the churn probability is low. Use the churn result
-  only to fine-tune how strong it is.
-- If there is NO review, start from the baseline score and adjust it by AT MOST
-  {max_adjust:.1f} either way.
-- Move it down for concrete negatives (a complaint filed, low satisfaction score,
-  long time since last order, a negative review).
-- Move it up for concrete positives (a positive review, long tenure, many orders,
-  high satisfaction with no complaint).
-- If there is no review, do not invent one: stay close to the baseline.
-- sentiment_score is a float from -1.0 (very negative) to 1.0 (very positive).
-
-Return ONLY compact JSON, no markdown:
-{{"sentiment_score": <float>}}
-"""
-
-# Without a review, Gemini may only fine-tune the churn-implied baseline by this
-# much — there is nothing concrete to justify contradicting the model.
-MAX_SENTIMENT_ADJUST = 0.3
-
 RETENTION_STYLES = [
     "warm and personal, like a message from a small business owner",
     "concise and professional",
@@ -184,13 +147,15 @@ class GeminiService:
 
         return FALLBACK_SMS_TEXT, FALLBACK_DISCOUNT, "fallback"
 
-    def score_sentiment(self, review_text: str, retries: int = 5) -> tuple[float, str]:
-        """Returns (sentiment_score, sentiment_label). Used when a new customer is
-        created with a review — a single, on-demand call, same rules as retention
-        message generation (never called in bulk)."""
+    def score_sentiment(self, review_text: str, retries: int = 3) -> tuple[float, str] | None:
+        """Returns (sentiment_score, sentiment_label), or None when there is no
+        review or Gemini could not score it. None is deliberately distinct from a
+        genuine neutral result, so the caller can impute instead of pretending the
+        customer was neutral. Used when a new customer is created with a review — a
+        single, on-demand call (never called in bulk)."""
         review_text = (review_text or "").strip()
         if not review_text or not self._api_key:
-            return 0.0, "neutral"
+            return None
 
         for attempt in range(retries):
             try:
@@ -227,97 +192,8 @@ class GeminiService:
 
                 time.sleep(2)
 
-        return 0.0, "neutral"
-
-    def score_churn_sentiment(
-        self,
-        prob: float,
-        risk_level: str,
-        reasons: list[str],
-        review_text: str | None = None,
-        facts: list[str] | None = None,
-        retries: int = 5,
-    ) -> tuple[float, str]:
-        """Returns (sentiment_score, sentiment_label). Without a review, the churn
-        probability gives a baseline that Gemini may only fine-tune (by at most
-        MAX_SENTIMENT_ADJUST) from the customer's facts. With a review, the review's
-        tone decides the label and the churn result only tunes its strength. If Gemini
-        is unavailable, the baseline is returned as-is."""
-        anchor = _score_from_churn(prob)
-        review = (review_text or "").strip()[:2000]
-
-        if self._api_key:
-            prompt = CHURN_SENTIMENT_PROMPT.format(
-                prob=prob,
-                risk=risk_level,
-                reasons=", ".join(reasons) if reasons else "none",
-                facts="; ".join(facts) if facts else "none",
-                review=f'"""{review}"""' if review else "(none provided)",
-                anchor=anchor,
-                max_adjust=MAX_SENTIMENT_ADJUST,
-            )
-            for attempt in range(retries):
-                try:
-                    response = self._get_client().models.generate_content(
-                        model=self._model,
-                        contents=prompt,
-                        config=types.GenerateContentConfig(
-                            response_mime_type="application/json",
-                            temperature=0.0,  # same customer -> same score
-                            automatic_function_calling=NO_AFC,
-                        ),
-                    )
-                    data = json.loads(response.text)
-                    score = float(data["sentiment_score"])
-                    if not review:
-                        # no review: nothing concrete to justify leaving the churn baseline
-                        score = min(anchor + MAX_SENTIMENT_ADJUST, max(anchor - MAX_SENTIMENT_ADJUST, score))
-                    score = round(max(-1.0, min(1.0, score)), 2)
-                    return score, _label_for_score(score)
-
-                except Exception as e:
-                    error = str(e)
-
-                    if "403" in error or "PERMISSION_DENIED" in error:
-                        print(f"[gemini] churn sentiment denied, using fallback: {error[:200]}")
-                        break
-
-                    if "503" in error or "UNAVAILABLE" in error:
-                        time.sleep(min(60, (2 ** attempt) + random.uniform(0, 2)))
-                        continue
-
-                    if "429" in error or "RESOURCE_EXHAUSTED" in error:
-                        time.sleep(min(120, 5 * (2 ** attempt)))
-                        continue
-
-                    if attempt == retries - 1:
-                        print(f"[gemini] churn sentiment failed, using fallback: {error[:200]}")
-                        break
-
-                    time.sleep(2)
-
-        score = round(anchor, 2)
-        return score, _label_for_score(score)
-
-
-def _score_from_churn(prob: float) -> float:
-    """Piecewise-linear map aligned with the model's own risk bands, so the label
-    always agrees with the risk level: low risk -> positive, medium -> neutral,
-    high -> negative."""
-    medium, high = settings.RISK_THRESHOLD_MEDIUM, settings.RISK_THRESHOLD_HIGH
-    if prob < medium:  # 0 -> +1.0, medium -> +0.3
-        return 1.0 - 0.7 * (prob / medium)
-    if prob < high:  # medium -> +0.2, high -> -0.2
-        return 0.2 - 0.4 * ((prob - medium) / (high - medium))
-    return -0.3 - 0.7 * ((prob - high) / (1.0 - high))  # high -> -0.3, 1.0 -> -1.0
-
-
-def _label_for_score(score: float) -> str:
-    if score < -0.2:
-        return "negative"
-    if score > 0.2:
-        return "positive"
-    return "neutral"
+        print("[gemini] review sentiment unavailable, model will use the training median")
+        return None
 
 
 def build_gemini_service(db: Session) -> GeminiService:

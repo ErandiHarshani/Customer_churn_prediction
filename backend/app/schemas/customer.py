@@ -1,4 +1,4 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from app.schemas.retention import RetentionMessageResponse, SmsLogEntry
 
@@ -76,27 +76,28 @@ class UpdatePhoneRequest(BaseModel):
 
 
 class CreateCustomerRequest(BaseModel):
-    tenure: float
-    city_tier: int
-    warehouse_to_home: float
+    # Hard limits are what is physically/semantically valid, not the training range.
+    tenure: float = Field(ge=0, le=600)
+    city_tier: int = Field(ge=1, le=3)
+    warehouse_to_home: float = Field(ge=0, le=1000)
     preferred_login_device: str
     preferred_payment_mode: str
     gender: str
-    hour_spend_on_app: float
-    number_of_device_registered: int
+    hour_spend_on_app: float = Field(ge=0, le=24)
+    number_of_device_registered: int = Field(ge=0, le=50)
     prefered_order_cat: str
-    satisfaction_score: int
+    satisfaction_score: int = Field(ge=1, le=5)
     marital_status: str
-    number_of_address: int
-    complain: int
-    order_amount_hike_from_last_year: float
-    coupon_used: float
-    order_count: float
-    day_since_last_order: float
-    cashback_amount: float
-    review_text: str | None = None
-    phone_number: str | None = None
-    last_product_purchased: str | None = None
+    number_of_address: int = Field(ge=0, le=100)
+    complain: int = Field(ge=0, le=1)
+    order_amount_hike_from_last_year: float = Field(ge=-100, le=1000)
+    coupon_used: float = Field(ge=0, le=1000)
+    order_count: float = Field(ge=0, le=10000)
+    day_since_last_order: float = Field(ge=0, le=3650)
+    cashback_amount: float = Field(ge=0, le=100000)
+    review_text: str | None = Field(default=None, max_length=2000)
+    phone_number: str | None = Field(default=None, max_length=20)
+    last_product_purchased: str | None = Field(default=None, max_length=200)
 
 
 class CustomerFieldOptions(BaseModel):
