@@ -30,6 +30,10 @@ interface CustomerTableProps {
   onToggleAllOnPage: (checked: boolean) => void;
   /** shown when the (loaded) result is empty */
   empty: ReactNode;
+  /** search/filter bar rendered at the top of the card */
+  toolbar?: ReactNode;
+  /** when set, replaces the table (e.g. a load error), keeping the toolbar */
+  error?: ReactNode;
 }
 
 const COLUMNS = 8;
@@ -47,6 +51,8 @@ export function CustomerTable({
   onToggleRow,
   onToggleAllOnPage,
   empty,
+  toolbar,
+  error,
 }: CustomerTableProps) {
   const navigate = useNavigate();
   const location = useLocation();
@@ -59,11 +65,16 @@ export function CustomerTable({
   const open = (id: number) => navigate(`/customers/${id}`, { state: { from: location.pathname + location.search } });
 
   return (
-    <Paper variant="outlined" sx={{ position: "relative", overflow: "hidden" }}>
+    <Paper variant="outlined" sx={{ overflow: "hidden" }}>
+      {toolbar}
+      {error ? (
+        <Box sx={{ p: 2 }}>{error}</Box>
+      ) : (
+      <Box sx={{ position: "relative" }}>
       {/* refetch indicator: rows stay put instead of collapsing to a spinner */}
       <LinearProgress
         aria-label="Loading customers"
-        sx={{ position: "absolute", top: 0, left: 0, right: 0, height: 3, opacity: loading && !firstLoad ? 1 : 0 }}
+        sx={{ position: "absolute", top: 0, left: 0, right: 0, height: 3, zIndex: 1, opacity: loading && !firstLoad ? 1 : 0 }}
       />
       <TableContainer>
         <Table size="medium">
@@ -145,7 +156,7 @@ export function CustomerTable({
           </TableBody>
         </Table>
       </TableContainer>
-      <Box sx={{ display: "flex", justifyContent: "flex-end" }}>
+      <Box sx={{ display: "flex", justifyContent: "flex-end", borderTop: 1, borderColor: "divider" }}>
         <TablePagination
           component="div"
           count={total}
@@ -159,6 +170,8 @@ export function CustomerTable({
           }
         />
       </Box>
+      </Box>
+      )}
     </Paper>
   );
 }

@@ -6,7 +6,6 @@ import TextField from "@mui/material/TextField";
 import Button from "@mui/material/Button";
 import IconButton from "@mui/material/IconButton";
 import InputAdornment from "@mui/material/InputAdornment";
-import Paper from "@mui/material/Paper";
 import AddIcon from "@mui/icons-material/Add";
 import SmsIcon from "@mui/icons-material/Sms";
 import SearchIcon from "@mui/icons-material/Search";
@@ -14,6 +13,8 @@ import ClearIcon from "@mui/icons-material/Clear";
 import PersonSearchIcon from "@mui/icons-material/PersonSearch";
 import ToggleButton from "@mui/material/ToggleButton";
 import ToggleButtonGroup from "@mui/material/ToggleButtonGroup";
+import { useTheme } from "@mui/material/styles";
+import { chartColors } from "../utils/chartColors";
 import { getCustomers } from "../api/customers";
 import { CustomerTable } from "../components/CustomerTable";
 import { BulkSmsDialog } from "../components/BulkSmsDialog";
@@ -103,8 +104,14 @@ export function CustomerListPage() {
     };
   }, [page, pageSize, query, riskLevel, retryTick]);
 
-  function handleRiskFilterChange(_: unknown, value: RiskLevel | null) {
-    updateParams({ risk_level: value, page: null });
+  function handleRiskFilterChange(_: unknown, value: RiskLevel | "all" | null) {
+    if (value === null) return; // clicking the active segment keeps it selected
+    updateParams({ risk_level: value === "all" ? null : value, page: null });
+  }
+
+  function openBulkDialog() {
+    setBulkDialogKey((k) => k + 1); // fresh dialog state every time it opens
+    setBulkDialogOpen(true);
   }
 
   function clearFilters() {
@@ -140,15 +147,8 @@ export function CustomerListPage() {
         subtitle="Every customer scored by the churn model, highest risk first."
         actions={
           <>
-            <Button
-              variant="outlined"
-              startIcon={<SmsIcon />}
-              onClick={() => {
-                setBulkDialogKey((k) => k + 1); // fresh dialog state every time it opens
-                setBulkDialogOpen(true);
-              }}
-            >
-              {selected.size > 0 ? `Bulk SMS (${selected.size} selected)` : "Bulk SMS"}
+            <Button variant="outlined" startIcon={<SmsIcon />} onClick={openBulkDialog}>
+              Bulk SMS
             </Button>
             <Button variant="contained" startIcon={<AddIcon />} component={RouterLink} to="/customers/new">
               Add customer
@@ -157,80 +157,36 @@ export function CustomerListPage() {
         }
       />
 
-      <Box sx={{ display: "flex", gap: 2, mb: 2, alignItems: "flex-start", flexWrap: "wrap" }}>
-        <TextField
-          size="small"
-          label="Search customers"
-          placeholder="e.g. 50001 or Mobile Phone"
-          value={searchInput}
-          onChange={(e) => setSearchInput(e.target.value)}
-          helperText="Customer ID (exact) or order category"
-          sx={{ width: { xs: "100%", sm: 340 } }}
-          slotProps={{
-            input: {
-              startAdornment: (
-                <InputAdornment position="start">
-                  <SearchIcon fontSize="small" />
-                </InputAdornment>
-              ),
-              endAdornment: searchInput ? (
-                <InputAdornment position="end">
-                  <IconButton size="small" aria-label="Clear search" onClick={() => setSearchInput("")} edge="end">
-                    <ClearIcon fontSize="small" />
-                  </IconButton>
-                </InputAdornment>
-              ) : undefined,
-            },
-          }}
-        />
-        <ToggleButtonGroup
-          size="small"
-          exclusive
-          value={riskLevel}
-          onChange={handleRiskFilterChange}
-          aria-label="Filter by risk level"
-        >
-          <ToggleButton value="high" color="error">
-            High risk
-          </ToggleButton>
-          <ToggleButton value="medium" color="warning">
-            Medium
-          </ToggleButton>
-          <ToggleButton value="low" color="success">
-            Low
-          </ToggleButton>
-        </ToggleButtonGroup>
-        {hasFilters && (
-          <Button onClick={clearFilters} startIcon={<ClearIcon />}>
-            Clear filters
-          </Button>
-        )}
-      </Box>
-
-      {selected.size > 0 && (
-        <Paper
-          variant="outlined"
-          sx={{ mb: 2, px: 2, py: 1, display: "flex", alignItems: "center", gap: 2, bgcolor: "primary.light", borderColor: "primary.light" }}
-        >
-          <Typography variant="body2" sx={{ fontWeight: 600, color: "primary.main" }}>
-            {selected.size.toLocaleString()} selected
-          </Typography>
-          <Button size="small" onClick={() => setSelected(new Set())}>
-            Clear selection
-          </Button>
-        </Paper>
-      )}
-
-      {showError ? (
-        <ErrorState
-          message={failure!.message}
-          onRetry={() => {
-            setFailure(null);
-            setRetryTick((t) => t + 1);
-          }}
-        />
-      ) : (
-        <CustomerTable
+      <CustomerTable
+          toolbar={
+            <ListToolbar
+              searchInput={searchInput}
+              onSearchChange={setSearchInput}
+              riskLevel={riskLevel}
+              onRiskChange={handleRiskFilterChange}
+              resultLabel={
+                loading
+                  ? "Loading…"
+                  : `${total.toLocaleString()} ${total === 1 ? "customer" : "customers"}${hasFilters ? " found" : ""}`
+              }
+              hasFilters={hasFilters}
+              onClearFilters={clearFilters}
+              selectedCount={selected.size}
+              onClearSelection={() => setSelected(new Set())}
+              onSendSelected={openBulkDialog}
+            />
+          }
+          error={
+            showError ? (
+              <ErrorState
+                message={failure!.message}
+                onRetry={() => {
+                  setFailure(null);
+                  setRetryTick((t) => t + 1);
+                }}
+              />
+            ) : undefined
+          }
           rows={rows}
           total={total}
           page={page}
@@ -263,7 +219,6 @@ export function CustomerListPage() {
             />
           }
         />
-      )}
 
       <BulkSmsDialog
         key={bulkDialogKey}
@@ -274,6 +229,152 @@ export function CustomerListPage() {
         search={query}
         onDone={() => setSelected(new Set())}
       />
+    </Box>
+  );
+}
+
+const RISK_SEGMENTS: { value: RiskLevel | "all"; label: string }[] = [
+  { value: "all", label: "All" },
+  { value: "high", label: "High" },
+  { value: "medium", label: "Medium" },
+  { value: "low", label: "Low" },
+];
+
+interface ListToolbarProps {
+  searchInput: string;
+  onSearchChange: (value: string) => void;
+  riskLevel: RiskLevel | null;
+  onRiskChange: (e: unknown, value: RiskLevel | "all" | null) => void;
+  resultLabel: string;
+  hasFilters: boolean;
+  onClearFilters: () => void;
+  selectedCount: number;
+  onClearSelection: () => void;
+  onSendSelected: () => void;
+}
+
+/** Search + risk filter + result count, attached to the top of the table card.
+ *  While rows are selected it becomes a selection bar instead. */
+function ListToolbar({
+  searchInput,
+  onSearchChange,
+  riskLevel,
+  onRiskChange,
+  resultLabel,
+  hasFilters,
+  onClearFilters,
+  selectedCount,
+  onClearSelection,
+  onSendSelected,
+}: ListToolbarProps) {
+  const theme = useTheme();
+  const status = chartColors(theme).status;
+  const barSx = {
+    display: "flex",
+    alignItems: "center",
+    flexWrap: "wrap",
+    gap: 1.5,
+    px: 2,
+    py: 1.5,
+    minHeight: 72,
+    borderBottom: 1,
+    borderColor: "divider",
+  } as const;
+
+  if (selectedCount > 0) {
+    return (
+      <Box sx={{ ...barSx, bgcolor: "primary.light" }} role="region" aria-label="Selection actions">
+        <Typography variant="body2" sx={{ fontWeight: 600, color: "primary.main" }}>
+          {selectedCount.toLocaleString()} selected
+        </Typography>
+        <Button size="small" onClick={onClearSelection}>
+          Clear selection
+        </Button>
+        <Box sx={{ flexGrow: 1 }} />
+        <Button variant="contained" size="small" startIcon={<SmsIcon />} onClick={onSendSelected}>
+          SMS selected customers
+        </Button>
+      </Box>
+    );
+  }
+
+  return (
+    <Box sx={barSx} role="search">
+      <TextField
+        size="small"
+        placeholder="Search by ID or category"
+        value={searchInput}
+        onChange={(e) => onSearchChange(e.target.value)}
+        sx={{
+          width: { xs: "100%", sm: 340 },
+          "& .MuiOutlinedInput-root": { bgcolor: "background.default", height: 40 },
+        }}
+        slotProps={{
+          htmlInput: { "aria-label": "Search customers by exact ID or order category" },
+          input: {
+            startAdornment: (
+              <InputAdornment position="start">
+                <SearchIcon fontSize="small" sx={{ color: "text.secondary" }} />
+              </InputAdornment>
+            ),
+            endAdornment: searchInput ? (
+              <InputAdornment position="end">
+                <IconButton size="small" aria-label="Clear search" onClick={() => onSearchChange("")} edge="end">
+                  <ClearIcon fontSize="small" />
+                </IconButton>
+              </InputAdornment>
+            ) : undefined,
+          },
+        }}
+      />
+
+      <ToggleButtonGroup
+        size="small"
+        exclusive
+        value={riskLevel ?? "all"}
+        onChange={onRiskChange}
+        aria-label="Filter by risk level"
+        sx={{
+          "& .MuiToggleButton-root": {
+            height: 40,
+            px: 1.75,
+            gap: 1,
+            textTransform: "none",
+            fontWeight: 500,
+            color: "text.secondary",
+            borderColor: "divider",
+            "&.Mui-selected, &.Mui-selected:hover": {
+              bgcolor: "primary.light",
+              color: "primary.main",
+              fontWeight: 600,
+            },
+          },
+        }}
+      >
+        {RISK_SEGMENTS.map(({ value, label }) => (
+          <ToggleButton key={value} value={value}>
+            {value !== "all" && (
+              <Box
+                component="span"
+                aria-hidden
+                sx={{ width: 8, height: 8, borderRadius: "50%", bgcolor: status[value as RiskLevel] }}
+              />
+            )}
+            {label}
+          </ToggleButton>
+        ))}
+      </ToggleButtonGroup>
+
+      <Box sx={{ flexGrow: 1 }} />
+
+      {hasFilters && (
+        <Button size="small" startIcon={<ClearIcon />} onClick={onClearFilters}>
+          Clear filters
+        </Button>
+      )}
+      <Typography variant="body2" color="text.secondary" aria-live="polite" sx={{ whiteSpace: "nowrap" }}>
+        {resultLabel}
+      </Typography>
     </Box>
   );
 }
