@@ -28,6 +28,36 @@ NUMERIC_COLS = [
 
 FEATURE_COLS = NUMERIC_COLS + CATEGORICAL_COLS
 
+# The source dataset records the same value under two spellings (e.g. "CC" and
+# "Credit Card"). Left as-is, the model learns the spelling rather than the
+# behaviour, and an admin's arbitrary choice in the form changes the prediction.
+# Applied identically in training (mlpart/train_model.py) and at inference.
+CATEGORY_ALIASES = {
+    "PreferredLoginDevice": {"Phone": "Mobile Phone"},
+    "PreferredPaymentMode": {"CC": "Credit Card", "COD": "Cash on Delivery"},
+    "PreferedOrderCat": {"Mobile": "Mobile Phone"},
+}
+
+
+def normalize_category(col: str, value):
+    if value is None:
+        return value
+    value = str(value).strip()
+    return CATEGORY_ALIASES.get(col, {}).get(value, value)
+
+
+def normalize_categories(data):
+    """Works on a single row (pd.Series / dict) or a whole DataFrame."""
+    out = data.copy()
+    for col in CATEGORY_ALIASES:
+        if col not in out:
+            continue
+        if hasattr(out[col], "map"):
+            out[col] = out[col].map(lambda v: normalize_category(col, v))
+        else:
+            out[col] = normalize_category(col, out[col])
+    return out
+
 # Demographic/account-attribute features that are statistically valid SHAP contributors
 # but make poor customer-facing retention copy ("because of your marital status").
 # Excluded from top_reasons candidates; the model still sees and uses them.
@@ -40,7 +70,8 @@ DEMOGRAPHIC_COLS = {
 }
 BEHAVIORAL_COLS = [c for c in FEATURE_COLS if c not in DEMOGRAPHIC_COLS]
 
-# Training-set medians (churn_with_sentiment.csv). A SHAP "reason" is described as
+# Fallback only — the live values come from model_meta.json ("training_medians"),
+# written by mlpart/train_model.py. A SHAP "reason" is described as
 # low/high relative to these, so the wording always matches the customer's actual
 # value — e.g. in this dataset a satisfaction score of 5 *raises* churn risk, and
 # calling that "low satisfaction score" would be false.
