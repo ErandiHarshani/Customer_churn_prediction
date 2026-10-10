@@ -57,8 +57,8 @@ Rules:
   not just a vague acknowledgement.
 - Do NOT open with "Hey!", "We're sorry", "We messed up", or any other generic apology
   opener — vary the opening line naturally based on the specific reasons given.
-- Offer a discount: 10-15% if churn probability is under 70%, 15-20% if 70-90%,
-  20-25% if over 90%.
+- The offer is exactly {discount}% off. The SMS text MUST contain "{discount}% off"
+  word for word — do not change the number or omit it.
 - Include a clear call to action that does NOT reference a link, URL, or website.
   This is a plain SMS with no clickable link, so never write "[Link]", "[URL]",
   or any other bracketed placeholder — end on the offer itself (e.g. "come back
@@ -66,7 +66,7 @@ Rules:
 - Sound like a real, specific message about THIS customer, not a generic template.
 
 Return ONLY compact JSON, no markdown:
-{{"sms_text": "<the sms, <=160 chars>", "discount_percent": <int>}}
+{{"sms_text": "<the sms, <=160 chars>"}}
 """
 
 RETENTION_STYLES = [
@@ -76,8 +76,31 @@ RETENTION_STYLES = [
     "empathetic and understated, focused on listening rather than selling",
 ]
 
-FALLBACK_SMS_TEXT = "We miss you! Enjoy 15% off your next order as a thank-you for being our customer."
-FALLBACK_DISCOUNT = 15
+SMS_MAX_CHARS = 160
+
+
+def discount_for(prob: float) -> int:
+    """The business rule decides the discount, not the language model, so the
+    offer is predictable and auditable."""
+    if prob > 0.9:
+        return 20
+    if prob >= 0.7:
+        return 15
+    return 10
+
+
+def fallback_sms(discount: int) -> str:
+    return f"We miss you! Enjoy {discount}% off your next order as a thank-you for being our customer."
+
+
+def _valid_sms(text: str, discount: int) -> bool:
+    return (
+        bool(text)
+        and len(text) <= SMS_MAX_CHARS
+        and f"{discount}%" in text
+        and "[" not in text
+        and "http" not in text.lower()
+    )
 
 
 class GeminiService:
@@ -94,7 +117,7 @@ class GeminiService:
         return self._client
 
     def generate_retention_message(
-        self, reasons: list[str], prob: float, facts: list[str] | None = None, retries: int = 5
+        self, reasons: list[str], prob: float, facts: list[str] | None = None, retries: int = 4
     ) -> tuple[str, int, str]:
         """Returns (sms_text, discount_percent, source) where source is 'gemini' or 'fallback'.
 
@@ -102,8 +125,9 @@ class GeminiService:
         customer", "3 orders placed", "no order in 45 days") — without these the
         model has nothing to individuate the message with and outputs converge on
         the same generic apology+discount template for every customer."""
+        discount = discount_for(prob)
         if not self._api_key:
-            return FALLBACK_SMS_TEXT, FALLBACK_DISCOUNT, "fallback"
+            return fallback_sms(discount), discount, "fallback"
 
         reasons_str = ", ".join(reasons) if reasons else "general disengagement"
         facts_str = "; ".join(facts) if facts else "no additional details available"
@@ -114,7 +138,7 @@ class GeminiService:
                 response = self._get_client().models.generate_content(
                     model=self._model,
                     contents=RETENTION_PROMPT.format(
-                        reasons=reasons_str, prob=prob, facts=facts_str, style=style
+                        reasons=reasons_str, prob=prob, facts=facts_str, style=style, discount=discount
                     ),
                     config=types.GenerateContentConfig(
                         response_mime_type="application/json",
@@ -122,8 +146,12 @@ class GeminiService:
                         automatic_function_calling=NO_AFC,
                     ),
                 )
-                data = json.loads(response.text)
-                return data["sms_text"][:160], int(data["discount_percent"]), "gemini"
+                text = " ".join(str(json.loads(response.text)["sms_text"]).split())
+                if _valid_sms(text, discount):
+                    return text, discount, "gemini"
+                # too long / missing the offer / placeholder link: ask again rather
+                # than cutting it mid-sentence
+                continue
 
             except Exception as e:
                 error = str(e)
@@ -145,7 +173,7 @@ class GeminiService:
 
                 time.sleep(2)
 
-        return FALLBACK_SMS_TEXT, FALLBACK_DISCOUNT, "fallback"
+        return fallback_sms(discount), discount, "fallback"
 
     def score_sentiment(self, review_text: str, retries: int = 3) -> tuple[float, str] | None:
         """Returns (sentiment_score, sentiment_label), or None when there is no
