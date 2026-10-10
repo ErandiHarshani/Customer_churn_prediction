@@ -1,19 +1,30 @@
-"""Recomputes churn_probability / risk_level / top_reasons / reason_impacts for the
-seeded (training-set) customers with the current predict_and_explain logic.
+"""Re-scores every customer already in the DB with the current model artifacts,
+in place — phone numbers, products, retention messages and SMS logs are kept.
+Run this after retraining (mlpart/train_model.py) instead of `app.seed --reset`.
 
-Customers created via the Predict Customer form are skipped: their stored
-sentiment_score is the churn-aware display sentiment, not the review sentiment the
-model was given, so re-running the model from the DB row would not be faithful.
+- Seeded (dataset) customers get their out-of-fold probability + SHAP reasons from
+  artifacts/customer_scores.csv, so no customer is scored by a model trained on them.
+- Customers created via the Predict Customer form are re-run through the live model.
+  Their review (if any) is re-scored with Gemini; without a review, or if Gemini is
+  unavailable, the training median is used and sentiment is not shown as a reason.
+- Category spelling variants are normalised on every row.
 
 Run with: python -m scripts.recompute_reasons
 """
 
+from datetime import datetime, timezone
+from pathlib import Path
+
+import numpy as np
 import pandas as pd
 
+from app.config import settings
 from app.database import SessionLocal
 from app.ml.artifacts import get_artifacts
-from app.ml.predict import predict_and_explain
+from app.ml.features import FEATURE_COLS, normalize_category
+from app.ml.predict import explain, predict_and_explain
 from app.models.customer import Customer
+from app.services.gemini_service import build_gemini_service
 
 COLUMN_MAP = {
     "Tenure": "tenure",
@@ -36,25 +47,55 @@ COLUMN_MAP = {
     "PreferedOrderCat": "prefered_order_cat",
     "MaritalStatus": "marital_status",
 }
+CATEGORY_COLUMNS = ["PreferredLoginDevice", "PreferredPaymentMode", "PreferedOrderCat"]
 
 
 def main() -> None:
     artifacts = get_artifacts()
+    scores = pd.read_csv(Path(settings.ML_ARTIFACT_DIR) / "customer_scores.csv").set_index("CustomerID")
+    shap_cols = [f"shap_{c}" for c in FEATURE_COLS]
+
     db = SessionLocal()
+    gemini = build_gemini_service(db)
     try:
-        customers = db.query(Customer).filter(Customer.review_is_synthetic.is_(True)).all()
+        customers = db.query(Customer).all()
         for i, customer in enumerate(customers, 1):
-            row = pd.Series({feat: getattr(customer, col) for feat, col in COLUMN_MAP.items()})
-            pred = predict_and_explain(row, artifacts)
+            for feat in CATEGORY_COLUMNS:
+                col = COLUMN_MAP[feat]
+                setattr(customer, col, normalize_category(feat, getattr(customer, col)))
+
+            if customer.review_is_synthetic and customer.customer_id in scores.index:
+                row = pd.Series({feat: getattr(customer, col) for feat, col in COLUMN_MAP.items()})
+                score = scores.loc[customer.customer_id]
+                pred = explain(
+                    float(score["churn_probability"]),
+                    score[shap_cols].to_numpy(dtype=np.float64),
+                    row,
+                    artifacts,
+                )
+            else:
+                scored = gemini.score_sentiment(customer.review_text) if customer.review_text else None
+                if scored is not None:
+                    customer.sentiment_score, customer.sentiment_label = scored
+                    exclude = frozenset()
+                else:
+                    customer.sentiment_score = artifacts.training_medians["sentiment_score"]
+                    customer.sentiment_label = "unavailable" if customer.review_text else "not provided"
+                    exclude = frozenset({"sentiment_score"})
+                row = pd.Series({feat: getattr(customer, col) for feat, col in COLUMN_MAP.items()})
+                pred = predict_and_explain(row, artifacts, exclude=exclude)
+
             customer.churn_probability = pred["churn_probability"]
             customer.risk_level = pred["risk_level"]
             customer.top_reasons = pred["top_reasons"]
             customer.reason_impacts = pred["reason_impacts"]
+            customer.predicted_at = datetime.now(timezone.utc)
             if i % 500 == 0:
                 db.commit()
                 print(f"  recomputed {i} customers...")
         db.commit()
-        print(f"Done: {len(customers)} seeded customers recomputed.")
+        print(f"Done: {len(customers)} customers recomputed with model {artifacts.model_name} "
+              f"v{artifacts.model_version}.")
     finally:
         db.close()
 

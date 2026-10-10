@@ -27,8 +27,8 @@ class Settings(BaseSettings):
 
     DRY_RUN: bool = True
 
-    RISK_THRESHOLD_HIGH: float = 0.6
-    RISK_THRESHOLD_MEDIUM: float = 0.35
+    # Risk thresholds are no longer configured here: they are chosen during
+    # training and read from artifacts/model_meta.json.
 
 
 settings = Settings()

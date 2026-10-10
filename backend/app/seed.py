@@ -1,26 +1,42 @@
-"""One-time (idempotent) database seeding: reads the training CSV, recomputes
-churn_probability / risk_level / top_reasons for every customer using the live
-XGBoost model + SHAP explainer, and writes it all into SQLite.
+"""One-time (idempotent) database seeding: reads the training CSV plus the
+out-of-fold scores written by mlpart/train_model.py (artifacts/customer_scores.csv)
+and writes every customer into SQLite.
+
+Each customer's probability and SHAP reasons come from a fold model that never saw
+that customer, so the dashboard's risk distribution is an honest out-of-sample view
+rather than the serving model re-scoring its own training rows.
 
 Run with: python -m app.seed [--reset]
 """
 
 import argparse
+from pathlib import Path
 
+import numpy as np
 import pandas as pd
 from sqlalchemy.orm import Session
 
 from app.database import Base, SessionLocal, engine
 from app.ml.artifacts import get_artifacts
-from app.ml.predict import predict_and_explain
 from app.config import settings
+from app.ml.features import FEATURE_COLS, normalize_categories
+from app.ml.predict import explain
 from app.models.customer import Customer
+from app.models.retention_message import RetentionMessage
+from app.models.sms_log import SmsLog
 
 
 def seed_database(db: Session, reset: bool = False) -> int:
     Base.metadata.create_all(bind=engine)
 
     if reset:
+        # customers added via the Predict form are dropped too, so drop their
+        # messages/SMS logs as well rather than leaving orphans behind
+        dataset_ids = [int(i) for i in pd.read_csv(settings.RAW_CSV_PATH, usecols=["CustomerID"])["CustomerID"]]
+        db.query(SmsLog).filter(SmsLog.customer_id.notin_(dataset_ids)).delete(synchronize_session=False)
+        db.query(RetentionMessage).filter(RetentionMessage.customer_id.notin_(dataset_ids)).delete(
+            synchronize_session=False
+        )
         db.query(Customer).delete()
         db.commit()
 
@@ -29,11 +45,16 @@ def seed_database(db: Session, reset: bool = False) -> int:
         return db.query(Customer).count()
 
     artifacts = get_artifacts()
-    df = pd.read_csv(settings.RAW_CSV_PATH)
+    df = normalize_categories(pd.read_csv(settings.RAW_CSV_PATH))
+    scores = pd.read_csv(Path(settings.ML_ARTIFACT_DIR) / "customer_scores.csv").set_index("CustomerID")
+    shap_cols = [f"shap_{c}" for c in FEATURE_COLS]
 
     count = 0
     for _, row in df.iterrows():
-        pred = predict_and_explain(row, artifacts)
+        score = scores.loc[int(row["CustomerID"])]
+        pred = explain(
+            float(score["churn_probability"]), score[shap_cols].to_numpy(dtype=np.float64), row, artifacts
+        )
 
         customer = Customer(
             customer_id=int(row["CustomerID"]),
