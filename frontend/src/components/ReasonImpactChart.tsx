@@ -20,7 +20,7 @@ export function ReasonImpactChart({ reasons }: { reasons: ReasonImpact[] }) {
       <BarChart data={data} layout="vertical" margin={{ left: 8, right: 24 }}>
         <XAxis type="number" domain={[0, "dataMax"]} tickFormatter={(v) => `${v}%`} />
         <YAxis type="category" dataKey="label" width={160} tick={{ fontSize: 12 }} />
-        <Tooltip formatter={(value: number) => [`${value}%`, "Impact on churn risk"]} />
+        <Tooltip formatter={(value) => [`${value}%`, "Share of churn-raising factors (SHAP)"]} />
         <Bar dataKey="impact_pct" isAnimationActive={false} radius={[0, 4, 4, 0]}>
           {data.map((entry, i) => (
             <Cell key={entry.label} fill={colors[(data.length - 1 - i) % colors.length]} />

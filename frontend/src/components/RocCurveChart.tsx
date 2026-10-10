@@ -37,7 +37,7 @@ export function RocCurveChart({ curves }: { curves: ModelCurve[] }) {
           domain={[0, 1]}
           label={{ value: "True Positive Rate", angle: -90, position: "insideLeft" }}
         />
-        <Tooltip formatter={(value: number) => value.toFixed(3)} />
+        <Tooltip formatter={(value) => Number(value).toFixed(3)} />
         <Legend />
 
         {curves.map((curve, i) => (
