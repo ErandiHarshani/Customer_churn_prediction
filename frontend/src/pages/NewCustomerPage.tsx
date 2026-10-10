@@ -27,6 +27,10 @@ import { RiskBadge } from "../components/RiskBadge";
 import { ReasonsSection } from "../components/ReasonsSection";
 import { RetentionMessagePanel } from "../components/RetentionMessagePanel";
 import { formatProbability, RISK_COLOR } from "../utils/format";
+import { apiErrorMessage } from "../utils/apiError";
+import { PageHeader } from "../components/PageHeader";
+import { useToast } from "../components/feedback/toastContext";
+import { keyframes } from "@mui/system";
 import type { CreateCustomerRequest, CustomerDetail, CustomerFieldOptions } from "../types";
 
 /* ------------------------------------------------------------------ */
@@ -181,23 +185,18 @@ function toRequest(values: FormValues): CreateCustomerRequest {
   };
 }
 
-// FastAPI returns either a string detail or a list of pydantic validation errors.
-function errorMessage(e: unknown, fallback: string): string {
-  const detail = (e as { response?: { data?: { detail?: unknown } } })?.response?.data?.detail;
-  if (typeof detail === "string") return detail;
-  if (Array.isArray(detail) && detail.length > 0) {
-    return detail
-      .map((d: { loc?: (string | number)[]; msg?: string }) => `${d.loc?.slice(-1)[0] ?? "field"}: ${d.msg}`)
-      .join("; ");
-  }
-  return fallback;
-}
-
 function SentimentIcon({ label }: { label: string | null }) {
   if (label === "negative") return <SentimentDissatisfiedIcon color="error" fontSize="large" />;
   if (label === "positive") return <SentimentSatisfiedIcon color="success" fontSize="large" />;
   return <SentimentNeutralIcon color="disabled" fontSize="large" />;
 }
+
+// The result panel appears after submit — bridge it in instead of letting it pop
+// (occasional, 220ms, strong ease-out; reduced motion keeps only the fade).
+const resultIn = keyframes`
+  from { opacity: 0; transform: translateY(8px); }
+  to   { opacity: 1; transform: translateY(0); }
+`;
 
 function Section({ title, description, children }: { title: string; description?: string; children: ReactNode }) {
   return (
@@ -223,6 +222,7 @@ function Section({ title, description, children }: { title: string; description?
 
 export function NewCustomerPage() {
   const navigate = useNavigate();
+  const toast = useToast();
   const [options, setOptions] = useState<CustomerFieldOptions | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [values, setValues] = useState<FormValues>(EMPTY_FORM);
@@ -234,7 +234,7 @@ export function NewCustomerPage() {
   useEffect(() => {
     getCustomerFieldOptions()
       .then(setOptions)
-      .catch((e) => setLoadError(errorMessage(e, "Could not load the form options from the server.")));
+      .catch((e) => setLoadError(apiErrorMessage(e, "Could not load the form options from the server.")));
   }, []);
 
   function setValue(key: keyof FormValues, value: string) {
@@ -264,9 +264,11 @@ export function NewCustomerPage() {
 
     setSubmitting(true);
     try {
-      setResult(await createCustomer(toRequest(values)));
+      const created = await createCustomer(toRequest(values));
+      setResult(created);
+      toast.success(`Customer #${created.customer_id} saved with its prediction.`);
     } catch (err) {
-      setSubmitError(errorMessage(err, "Could not run the prediction. Please check the values and try again."));
+      setSubmitError(apiErrorMessage(err, "Could not run the prediction. Please check the values and try again."));
     } finally {
       setSubmitting(false);
     }
@@ -351,16 +353,17 @@ export function NewCustomerPage() {
 
   return (
     <Box>
-      <Typography variant="h5" component="h1" gutterBottom>
-        Predict Customer Churn
-      </Typography>
-      <Typography variant="body2" color="text.secondary">
-        Enter the customer's details to run the live churn model. The customer is saved to your records
-        with the prediction.
-      </Typography>
-      <Typography variant="caption" color="text.secondary" sx={{ display: "block", mb: 3 }}>
-        Fields marked * are required.
-      </Typography>
+      <PageHeader
+        title="Predict Customer Churn"
+        subtitle={
+          <>
+            Enter the customer's details to run the live churn model. The customer is saved with the prediction.
+            <Box component="span" sx={{ display: "block", mt: 0.5, fontSize: 12 }}>
+              Fields marked * are required.
+            </Box>
+          </>
+        }
+      />
 
       <Grid container spacing={3} sx={{ alignItems: "flex-start" }}>
         <Grid size={{ xs: 12, md: 7 }}>
@@ -515,7 +518,13 @@ export function NewCustomerPage() {
                     </Typography>
                   </Box>
                 ) : (
-                  <Box>
+                  <Box
+                    key={result.customer_id}
+                    sx={{
+                      animation: `${resultIn} 220ms cubic-bezier(0.23, 1, 0.32, 1)`,
+                      "@media (prefers-reduced-motion: reduce)": { animation: "none" },
+                    }}
+                  >
                     <Grid container spacing={2} sx={{ mb: 2 }}>
                       <Grid size={6}>
                         <Typography variant="caption" color="text.secondary">
