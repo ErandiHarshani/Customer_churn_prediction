@@ -5,6 +5,10 @@ import Grid from "@mui/material/Grid";
 import Box from "@mui/material/Box";
 import Chip from "@mui/material/Chip";
 import Table from "@mui/material/Table";
+import TableContainer from "@mui/material/TableContainer";
+import Link from "@mui/material/Link";
+import { Link as RouterLink } from "react-router-dom";
+import { IconDisc } from "./StatCard";
 import TableBody from "@mui/material/TableBody";
 import TableCell from "@mui/material/TableCell";
 import TableHead from "@mui/material/TableHead";
@@ -15,36 +19,12 @@ import AutoAwesomeIcon from "@mui/icons-material/AutoAwesome";
 import CheckCircleIcon from "@mui/icons-material/CheckCircle";
 import type { EngagementAnalytics } from "../types";
 
-function MiniStat({
-  icon,
-  label,
-  value,
-  color,
-}: {
-  icon: React.ReactNode;
-  label: string;
-  value: string | number;
-  color?: string;
-}) {
+function MiniStat({ icon, label, value }: { icon: React.ReactNode; label: string; value: string | number }) {
   return (
     <Box sx={{ display: "flex", alignItems: "center", gap: 1.5 }}>
-      <Box
-        sx={{
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-          width: 40,
-          height: 40,
-          borderRadius: "50%",
-          bgcolor: (theme) =>
-            theme.palette.mode === "dark" ? "rgba(255,255,255,0.06)" : "rgba(0,0,0,0.04)",
-          color,
-        }}
-      >
-        {icon}
-      </Box>
+      <IconDisc>{icon}</IconDisc>
       <Box>
-        <Typography variant="h6" sx={{ lineHeight: 1.1 }}>
+        <Typography variant="h6" component="p" sx={{ lineHeight: 1.1 }}>
           {value}
         </Typography>
         <Typography variant="caption" color="text.secondary">
@@ -57,8 +37,11 @@ function MiniStat({
 
 export function EngagementAnalyticsCard({ data }: { data: EngagementAnalytics }) {
   const { sms_stats, retention_stats, recent_sms } = data;
-  const successRate =
-    sms_stats.total_sent > 0 ? (sms_stats.successful / sms_stats.total_sent) * 100 : 0;
+  // Only real sends reach the provider; dry-runs are simulated and always "succeed".
+  const submissionRate =
+    sms_stats.real_count > 0
+      ? `${((sms_stats.real_successful / sms_stats.real_count) * 100).toFixed(0)}%`
+      : "—";
 
   return (
     <Card variant="outlined">
@@ -71,17 +54,15 @@ export function EngagementAnalyticsCard({ data }: { data: EngagementAnalytics })
           <Grid size={{ xs: 12, sm: 4 }}>
             <MiniStat
               icon={<SmsIcon />}
-              label="SMS sent"
-              value={sms_stats.total_sent}
-              color="#7c6cf6"
+              label="SMS attempts"
+              value={sms_stats.total_sent.toLocaleString()}
             />
           </Grid>
           <Grid size={{ xs: 12, sm: 4 }}>
             <MiniStat
               icon={<CheckCircleIcon />}
-              label="Delivery success rate"
-              value={`${successRate.toFixed(0)}%`}
-              color="#2e7d32"
+              label={sms_stats.real_count > 0 ? "Submission success (real sends)" : "Submission success (dry-run only)"}
+              value={submissionRate}
             />
           </Grid>
           <Grid size={{ xs: 12, sm: 4 }}>
@@ -89,7 +70,6 @@ export function EngagementAnalyticsCard({ data }: { data: EngagementAnalytics })
               icon={<AutoAwesomeIcon />}
               label="AI retention messages"
               value={`${retention_stats.gemini_generated} / ${retention_stats.total_generated}`}
-              color="#22c1c3"
             />
           </Grid>
         </Grid>
@@ -112,6 +92,7 @@ export function EngagementAnalyticsCard({ data }: { data: EngagementAnalytics })
             No SMS sent yet.
           </Typography>
         ) : (
+          <TableContainer>
           <Table size="small">
             <TableHead>
               <TableRow>
@@ -124,9 +105,13 @@ export function EngagementAnalyticsCard({ data }: { data: EngagementAnalytics })
               </TableRow>
             </TableHead>
             <TableBody>
-              {recent_sms.map((entry, i) => (
-                <TableRow key={i}>
-                  <TableCell>#{entry.customer_id}</TableCell>
+              {recent_sms.map((entry) => (
+                <TableRow key={`${entry.customer_id}-${entry.sent_at}`}>
+                  <TableCell>
+                    <Link component={RouterLink} to={`/customers/${entry.customer_id}`} underline="hover">
+                      #{entry.customer_id}
+                    </Link>
+                  </TableCell>
                   <TableCell>{entry.phone_number}</TableCell>
                   <TableCell sx={{ maxWidth: 260 }}>
                     {entry.message ? (
@@ -151,8 +136,8 @@ export function EngagementAnalyticsCard({ data }: { data: EngagementAnalytics })
                   <TableCell>
                     <Chip
                       size="small"
-                      label={entry.success ? "sent" : "failed"}
-                      color={entry.success ? "success" : "error"}
+                      label={entry.dry_run ? "simulated" : entry.success ? "submitted" : "failed"}
+                      color={entry.dry_run ? "default" : entry.success ? "success" : "error"}
                     />
                   </TableCell>
                   <TableCell>
@@ -169,6 +154,7 @@ export function EngagementAnalyticsCard({ data }: { data: EngagementAnalytics })
               ))}
             </TableBody>
           </Table>
+          </TableContainer>
         )}
       </CardContent>
     </Card>

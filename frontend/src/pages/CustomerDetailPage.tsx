@@ -1,60 +1,107 @@
 import { useEffect, useState } from "react";
-import { useParams, useNavigate } from "react-router-dom";
+import { Link as RouterLink, useLocation, useParams } from "react-router-dom";
 import Box from "@mui/material/Box";
 import Typography from "@mui/material/Typography";
 import Grid from "@mui/material/Grid";
 import Card from "@mui/material/Card";
 import CardContent from "@mui/material/CardContent";
 import Chip from "@mui/material/Chip";
-import Stack from "@mui/material/Stack";
-import CircularProgress from "@mui/material/CircularProgress";
 import Button from "@mui/material/Button";
-import ArrowBackIcon from "@mui/icons-material/ArrowBack";
+import Stack from "@mui/material/Stack";
+import PersonOffIcon from "@mui/icons-material/PersonOff";
 import { getCustomerDetail } from "../api/customers";
 import { RiskBadge } from "../components/RiskBadge";
+import { ReasonsSection } from "../components/ReasonsSection";
+import { formatProbability, RISK_COLOR } from "../utils/format";
 import { RetentionMessagePanel } from "../components/RetentionMessagePanel";
 import { SendSmsPanel } from "../components/SendSmsPanel";
+import { PageHeader } from "../components/PageHeader";
+import { EmptyState, ErrorState, PageSkeleton } from "../components/PageStates";
+import { apiErrorMessage, isNotFound } from "../utils/apiError";
 import type { CustomerDetail } from "../types";
 
 export function CustomerDetailPage() {
   const { customerId } = useParams<{ customerId: string }>();
-  const navigate = useNavigate();
-  const [detail, setDetail] = useState<CustomerDetail | null>(null);
-  const [loading, setLoading] = useState(true);
+  const location = useLocation();
+  // the list view (with its filters) the user came from, if any
+  const fromList = (location.state as { from?: string } | null)?.from ?? "/customers";
+  const id = Number(customerId);
+
+  // results tagged with the customer they belong to, so navigating between
+  // customers never shows the previous one's data
+  const [loaded, setLoaded] = useState<{ id: number; detail: CustomerDetail } | null>(null);
+  const [failure, setFailure] = useState<{ id: number; notFound: boolean; message: string } | null>(null);
+  const [retryTick, setRetryTick] = useState(0);
 
   useEffect(() => {
-    if (!customerId) return;
-    setLoading(true);
-    getCustomerDetail(Number(customerId))
-      .then(setDetail)
-      .finally(() => setLoading(false));
-  }, [customerId]);
+    if (!Number.isFinite(id)) return;
+    let stale = false;
+    getCustomerDetail(id)
+      .then((d) => !stale && setLoaded({ id, detail: d }))
+      .catch((e) => !stale && setFailure({ id, notFound: isNotFound(e), message: apiErrorMessage(e, "Could not load this customer.") }));
+    return () => {
+      stale = true;
+    };
+  }, [id, retryTick]);
 
-  if (loading) {
+  const detail = loaded?.id === id ? loaded.detail : null;
+  const setDetail = (d: CustomerDetail) => setLoaded({ id, detail: d });
+  const failed = failure?.id === id ? failure : null;
+  const crumbs = [{ label: "Customers", to: fromList }, { label: `#${customerId}` }];
+
+  if (failed) {
     return (
-      <Box sx={{ display: "flex", justifyContent: "center", mt: 8 }}>
-        <CircularProgress />
+      <Box>
+        <PageHeader title={`Customer #${customerId}`} breadcrumbs={crumbs} />
+        {failed.notFound ? (
+          <Card variant="outlined">
+            <EmptyState
+              icon={<PersonOffIcon />}
+              title="Customer not found"
+              description={`There is no customer #${customerId}. It may have been removed when the database was reseeded.`}
+              action={
+                <Button variant="contained" component={RouterLink} to={fromList}>
+                  Back to customers
+                </Button>
+              }
+            />
+          </Card>
+        ) : (
+          <ErrorState
+            message={failed.message}
+            onRetry={() => {
+              setFailure(null);
+              setRetryTick((t) => t + 1);
+            }}
+          />
+        )}
       </Box>
     );
   }
 
   if (!detail) {
-    return <Typography color="error">Customer not found.</Typography>;
+    return <PageSkeleton cards={0} tall={2} />;
   }
 
   const p = detail.profile;
 
   return (
     <Box>
-      <Button startIcon={<ArrowBackIcon />} onClick={() => navigate(-1)} sx={{ mb: 2 }}>
-        Back
-      </Button>
-
-      <Stack direction="row" spacing={2} sx={{ alignItems: "center", mb: 3 }}>
-        <Typography variant="h5">Customer #{detail.customer_id}</Typography>
-        <RiskBadge level={detail.risk_level} />
-        <Chip label={`${(detail.churn_probability * 100).toFixed(1)}% churn probability`} />
-      </Stack>
+      <PageHeader
+        title={
+          <Box component="span" sx={{ display: "inline-flex", alignItems: "center", gap: 1.5, flexWrap: "wrap" }}>
+            Customer #{detail.customer_id}
+            <RiskBadge level={detail.risk_level} />
+            <Chip
+              variant="outlined"
+              color={RISK_COLOR[detail.risk_level]}
+              label={`${formatProbability(detail.churn_probability)} churn probability`}
+            />
+          </Box>
+        }
+        documentTitle={`Customer #${detail.customer_id}`}
+        breadcrumbs={crumbs}
+      />
 
       <Grid container spacing={2}>
         <Grid size={{ xs: 12, md: 6 }}>
@@ -63,17 +110,7 @@ export function CustomerDetailPage() {
               <Typography variant="subtitle1" gutterBottom>
                 Why this customer is at risk (SHAP)
               </Typography>
-              {detail.top_reasons.length === 0 ? (
-                <Typography variant="body2" color="text.secondary">
-                  No strong churn-risk factors identified.
-                </Typography>
-              ) : (
-                <Stack direction="row" spacing={1} sx={{ flexWrap: "wrap", gap: 1 }}>
-                  {detail.top_reasons.map((reason) => (
-                    <Chip key={reason} label={reason} color="warning" variant="outlined" />
-                  ))}
-                </Stack>
-              )}
+              <ReasonsSection riskLevel={detail.risk_level} reasons={detail.reason_impacts} />
             </CardContent>
           </Card>
 
@@ -140,8 +177,9 @@ export function CustomerDetailPage() {
               smsLog={detail.sms_log}
               onPhoneUpdated={(phone) => setDetail({ ...detail, phone_number: phone })}
               onSent={() => {
-                if (!customerId) return;
-                getCustomerDetail(Number(customerId)).then(setDetail);
+                getCustomerDetail(id)
+                  .then(setDetail)
+                  .catch(() => undefined); // the toast already confirmed the send; history refreshes next visit
               }}
             />
           </Stack>

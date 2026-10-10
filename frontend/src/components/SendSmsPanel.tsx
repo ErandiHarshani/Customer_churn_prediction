@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Card from "@mui/material/Card";
 import CardContent from "@mui/material/CardContent";
 import Typography from "@mui/material/Typography";
@@ -11,9 +11,16 @@ import CircularProgress from "@mui/material/CircularProgress";
 import List from "@mui/material/List";
 import ListItem from "@mui/material/ListItem";
 import ListItemText from "@mui/material/ListItemText";
+import SendIcon from "@mui/icons-material/Send";
 import { updateCustomerPhone } from "../api/customers";
 import { sendSms } from "../api/retention";
+import { getSmsGatewaySettings } from "../api/smsGateway";
+import { useConfirm } from "./feedback/confirmContext";
+import { useToast } from "./feedback/toastContext";
+import { apiErrorMessage } from "../utils/apiError";
 import type { SmsLogEntry } from "../types";
+
+const PHONE_PATTERN = /^\+?[0-9\s-]{9,15}$/;
 
 interface SendSmsPanelProps {
   customerId: number;
@@ -24,69 +31,137 @@ interface SendSmsPanelProps {
   onSent: () => void;
 }
 
-export function SendSmsPanel({
-  customerId,
-  phoneNumber,
-  hasMessage,
-  smsLog,
-  onPhoneUpdated,
-  onSent,
-}: SendSmsPanelProps) {
-  const [phoneInput, setPhoneInput] = useState(phoneNumber ?? "");
+/** Same vocabulary as the dashboard's SMS activity table. */
+function statusChip(entry: SmsLogEntry) {
+  if (entry.dry_run) return <Chip label="simulated" size="small" />;
+  return <Chip label={entry.success ? "submitted" : "failed"} size="small" color={entry.success ? "success" : "error"} />;
+}
+
+export function SendSmsPanel({ customerId, phoneNumber, hasMessage, smsLog, onPhoneUpdated, onSent }: SendSmsPanelProps) {
+  const confirm = useConfirm();
+  const toast = useToast();
+  // the field follows the saved number until the user edits it
+  const [edit, setEdit] = useState({ forPhone: phoneNumber, value: phoneNumber ?? "" });
+  const phoneInput = edit.forPhone === phoneNumber ? edit.value : phoneNumber ?? "";
   const [savingPhone, setSavingPhone] = useState(false);
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [success, setSuccess] = useState<string | null>(null);
+  const [dryRun, setDryRun] = useState<boolean | null>(null);
+
+  useEffect(() => {
+    getSmsGatewaySettings()
+      .then((s) => setDryRun(s.dry_run))
+      .catch(() => setDryRun(null));
+  }, []);
+
+  const trimmed = phoneInput.trim();
+  const phoneChanged = trimmed !== (phoneNumber ?? "");
+  const phoneInvalid = trimmed !== "" && !PHONE_PATTERN.test(trimmed);
 
   async function handleSavePhone() {
     setSavingPhone(true);
     setError(null);
     try {
-      await updateCustomerPhone(customerId, phoneInput);
-      onPhoneUpdated(phoneInput);
-    } catch {
-      setError("Could not save phone number.");
+      await updateCustomerPhone(customerId, trimmed);
+      onPhoneUpdated(trimmed);
+      toast.success("Phone number saved.");
+    } catch (e) {
+      setError(apiErrorMessage(e, "Could not save the phone number."));
     } finally {
       setSavingPhone(false);
     }
   }
 
   async function handleSend() {
+    // re-check the gateway mode right before confirming: it may have changed, and an
+    // unknown mode must be treated as possibly live
+    const dryRunNow = await getSmsGatewaySettings()
+      .then((s) => s.dry_run)
+      .catch(() => null);
+    setDryRun(dryRunNow);
+    const live = dryRunNow !== true;
+    const ok = await confirm({
+      title: dryRunNow === null ? "Send SMS? (mode unknown)" : live ? "Send a real SMS?" : "Send SMS (dry-run)?",
+      body: (
+        <Box>
+          <Typography variant="body2" color="text.secondary" sx={{ mb: 1.5 }}>
+            The latest retention message goes to <strong>{phoneNumber}</strong>.
+          </Typography>
+          <Alert severity={live ? "warning" : "info"} sx={{ py: 0 }}>
+            {dryRunNow === null
+              ? "Couldn't confirm the SMS mode — this may send a real, charged SMS."
+              : live
+                ? "LIVE mode — the customer receives this SMS and it is charged."
+                : "Dry-run mode — nothing reaches the phone."}
+          </Alert>
+        </Box>
+      ),
+      confirmText: live ? "Send real SMS" : "Send",
+      tone: live ? "danger" : "default",
+    });
+    if (!ok) return;
+
     setSending(true);
     setError(null);
-    setSuccess(null);
     try {
       const result = await sendSms(customerId);
-      setSuccess(
-        result.dry_run
-          ? "Dry-run: no real SMS was sent (DRY_RUN=true on the backend)."
-          : "SMS sent successfully."
-      );
+      if (result.success) {
+        toast.success(result.dry_run ? "SMS simulated (dry-run) — nothing was sent." : "SMS submitted to Notify.lk.");
+      } else {
+        toast.error(`The SMS provider rejected the message (${result.provider_status ?? "unknown status"}).`);
+      }
       onSent();
-    } catch (e: any) {
-      setError(e?.response?.data?.detail ?? "Could not send SMS.");
+    } catch (e) {
+      setError(apiErrorMessage(e, "Could not send the SMS."));
     } finally {
       setSending(false);
     }
   }
 
+  const sendBlockedReason = !hasMessage
+    ? "Generate a retention message first."
+    : !phoneNumber
+      ? "Save a phone number first."
+      : phoneChanged
+        ? "Save the new phone number before sending."
+        : null;
+
   return (
     <Card variant="outlined">
       <CardContent>
-        <Typography variant="subtitle1" gutterBottom>
-          SMS
-        </Typography>
+        <Box sx={{ display: "flex", alignItems: "center", justifyContent: "space-between", mb: 1.5 }}>
+          <Typography variant="subtitle1">SMS</Typography>
+          {dryRun !== null && (
+            <Chip size="small" color={dryRun ? "default" : "warning"} label={dryRun ? "Dry-run" : "LIVE SMS"} />
+          )}
+        </Box>
 
-        <Box sx={{ display: "flex", gap: 1, mb: 2 }}>
+        <Box
+          component="form"
+          onSubmit={(e) => {
+            e.preventDefault();
+            if (phoneChanged && trimmed && !phoneInvalid) handleSavePhone();
+          }}
+          sx={{ display: "flex", gap: 1, mb: 2, alignItems: "flex-start" }}
+        >
           <TextField
             size="small"
             label="Phone number"
-            placeholder="0771234567"
+            placeholder="e.g. 0771234567"
             value={phoneInput}
-            onChange={(e) => setPhoneInput(e.target.value)}
+            onChange={(e) => setEdit({ forPhone: phoneNumber, value: e.target.value })}
+            error={phoneInvalid}
+            helperText={phoneInvalid ? "Enter a valid phone number" : " "}
+            slotProps={{ htmlInput: { inputMode: "tel" } }}
             fullWidth
           />
-          <Button variant="outlined" onClick={handleSavePhone} disabled={savingPhone}>
+          <Button
+            type="submit"
+            variant="outlined"
+            disabled={savingPhone || !phoneChanged || !trimmed || phoneInvalid}
+            startIcon={savingPhone ? <CircularProgress size={16} color="inherit" /> : undefined}
+            sx={{ height: 40 }}
+          >
             Save
           </Button>
         </Box>
@@ -96,48 +171,39 @@ export function SendSmsPanel({
             {error}
           </Alert>
         )}
-        {success && (
-          <Alert severity="success" sx={{ mb: 2 }}>
-            {success}
-          </Alert>
-        )}
 
         <Button
           variant="contained"
-          color="secondary"
           onClick={handleSend}
-          disabled={sending || !hasMessage || !phoneNumber}
-          startIcon={sending ? <CircularProgress size={16} color="inherit" /> : undefined}
+          disabled={sending || !!sendBlockedReason}
+          startIcon={sending ? <CircularProgress size={16} color="inherit" /> : <SendIcon />}
         >
-          Send SMS
+          {sending ? "Sending…" : "Send SMS"}
         </Button>
-        {!hasMessage && (
+        {sendBlockedReason && (
           <Typography variant="caption" color="text.secondary" sx={{ display: "block", mt: 1 }}>
-            Generate a retention message first.
+            {sendBlockedReason}
           </Typography>
         )}
 
-        {smsLog.length > 0 && (
-          <>
-            <Typography variant="subtitle2" sx={{ mt: 3 }}>
-              Send history
-            </Typography>
-            <List dense>
-              {smsLog.map((entry) => (
-                <ListItem key={entry.id} disableGutters>
-                  <ListItemText
-                    primary={`${entry.phone_number} — ${entry.provider_status ?? "unknown"}`}
-                    secondary={new Date(entry.sent_at).toLocaleString()}
-                  />
-                  <Chip
-                    label={entry.dry_run ? "dry-run" : entry.success ? "sent" : "failed"}
-                    size="small"
-                    color={entry.dry_run ? "default" : entry.success ? "success" : "error"}
-                  />
-                </ListItem>
-              ))}
-            </List>
-          </>
+        <Typography variant="subtitle2" sx={{ mt: 3 }}>
+          Send history
+        </Typography>
+        {smsLog.length === 0 ? (
+          <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
+            No SMS sent to this customer yet.
+          </Typography>
+        ) : (
+          <List dense>
+            {smsLog.map((entry) => (
+              <ListItem key={entry.id} disableGutters secondaryAction={statusChip(entry)}>
+                <ListItemText
+                  primary={entry.phone_number}
+                  secondary={new Date(entry.sent_at).toLocaleString()}
+                />
+              </ListItem>
+            ))}
+          </List>
         )}
       </CardContent>
     </Card>

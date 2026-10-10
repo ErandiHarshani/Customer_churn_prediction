@@ -1,41 +1,78 @@
+import Box from "@mui/material/Box";
+import ButtonBase from "@mui/material/ButtonBase";
+import Typography from "@mui/material/Typography";
 import { useTheme } from "@mui/material/styles";
-import { PieChart, Pie, Cell, Tooltip, Legend, ResponsiveContainer } from "recharts";
-import type { RiskDistribution } from "../types";
+import type { RiskDistribution, RiskLevel } from "../types";
+import { chartColors } from "../utils/chartColors";
 
-export function RiskDistributionChart({ data }: { data: RiskDistribution }) {
+const ROWS: { level: RiskLevel; label: string }[] = [
+  { level: "high", label: "High risk" },
+  { level: "medium", label: "Medium risk" },
+  { level: "low", label: "Low risk" },
+];
+
+/** Three labelled bars instead of a donut: counts this unequal (≈ 4,100 vs 650)
+ *  are read off a common baseline, and every bar carries its own label + value,
+ *  so the status colour never has to carry meaning alone. */
+export function RiskDistributionChart({
+  data,
+  onSelect,
+}: {
+  data: RiskDistribution;
+  onSelect?: (level: RiskLevel) => void;
+}) {
   const theme = useTheme();
-
-  const chartData = [
-    { name: "High", value: data.high, color: theme.palette.error.main },
-    { name: "Medium", value: data.medium, color: theme.palette.warning.main },
-    { name: "Low", value: data.low, color: theme.palette.success.main },
-  ];
+  const c = chartColors(theme);
+  const total = data.high + data.medium + data.low || 1;
+  const max = Math.max(data.high, data.medium, data.low) || 1;
 
   return (
-    <ResponsiveContainer width="100%" height={260}>
-      <PieChart>
-        <Pie
-          data={chartData}
-          dataKey="value"
-          nameKey="name"
-          cx="50%"
-          cy="50%"
-          innerRadius={60}
-          outerRadius={90}
-          paddingAngle={2}
-          // The pie's default mount animation relies on requestAnimationFrame,
-          // which does not reliably tick in an automated/headless browser tab
-          // (observed: sectors stuck permanently at the animation's initial
-          // zero-radius frame). Disabling it also makes the chart snappier.
-          isAnimationActive={false}
-        >
-          {chartData.map((entry) => (
-            <Cell key={entry.name} fill={entry.color} />
-          ))}
-        </Pie>
-        <Tooltip />
-        <Legend />
-      </PieChart>
-    </ResponsiveContainer>
+    <Box sx={{ display: "flex", flexDirection: "column", gap: 1, pt: 1 }}>
+      {ROWS.map(({ level, label }) => {
+        const value = data[level];
+        return (
+          <ButtonBase
+            key={level}
+            onClick={() => onSelect?.(level)}
+            disabled={!onSelect}
+            aria-label={`${label}: ${value.toLocaleString()} customers. Show list`}
+            sx={{
+              display: "block",
+              textAlign: "left",
+              borderRadius: 1,
+              px: 1,
+              py: 0.75,
+              transition: "background-color 150ms ease",
+              "@media (hover: hover) and (pointer: fine)": {
+                "&:hover": { bgcolor: "action.hover" },
+              },
+            }}
+          >
+            <Box sx={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", mb: 0.75 }}>
+              <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
+                <Box sx={{ width: 8, height: 8, borderRadius: "50%", bgcolor: c.status[level] }} />
+                <Typography variant="body2">{label}</Typography>
+              </Box>
+              <Typography variant="body2" color="text.secondary">
+                <Box component="span" sx={{ color: "text.primary", fontWeight: 600 }}>
+                  {value.toLocaleString()}
+                </Box>{" "}
+                · {((value / total) * 100).toFixed(1)}%
+              </Typography>
+            </Box>
+            <Box sx={{ height: 10, borderRadius: 1, bgcolor: c.track, overflow: "hidden" }}>
+              <Box
+                sx={{ height: "100%", width: `${(value / max) * 100}%`, bgcolor: c.status[level], borderRadius: 1 }}
+              />
+            </Box>
+          </ButtonBase>
+        );
+      })}
+      {onSelect && (
+        <Typography variant="caption" color="text.secondary" sx={{ px: 1 }}>
+          Click a row to open those customers.
+        </Typography>
+      )}
+    </Box>
   );
 }

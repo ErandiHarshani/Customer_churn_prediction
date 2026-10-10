@@ -1,0 +1,57 @@
+{
+  "model_name": "Random Forest",
+  "model_file": "rf_churn_model.joblib",
+  "version": "20261010-095333",
+  "trained_on_rows": 5630,
+  "feature_columns": [
+    "Tenure",
+    "CityTier",
+    "WarehouseToHome",
+    "NumberOfDeviceRegistered",
+    "SatisfactionScore",
+    "NumberOfAddress",
+    "Complain",
+    "DaySinceLastOrder",
+    "CashbackAmount",
+    "sentiment_score",
+    "PreferredPaymentMode",
+    "PreferedOrderCat",
+    "MaritalStatus"
+  ],
+  "threshold_high": 0.405,
+  "threshold_medium": 0.168,
+  "min_reason_shap": 0.0136,
+  "training_medians": {
+    "Tenure": 9.0,
+    "CityTier": 1.0,
+    "WarehouseToHome": 14.0,
+    "NumberOfDeviceRegistered": 4.0,
+    "SatisfactionScore": 3.0,
+    "NumberOfAddress": 3.0,
+    "Complain": 0.0,
+    "DaySinceLastOrder": 3.0,
+    "CashbackAmount": 163.28,
+    "sentiment_score": -0.4
+  },
+  "category_values": {
+    "PreferredPaymentMode": [
+      "Cash on Delivery",
+      "Credit Card",
+      "Debit Card",
+      "E wallet",
+      "UPI"
+    ],
+    "PreferedOrderCat": [
+      "Fashion",
+      "Grocery",
+      "Laptop & Accessory",
+      "Mobile Phone",
+      "Others"
+    ],
+    "MaritalStatus": [
+      "Divorced",
+      "Married",
+      "Single"
+    ]
+  }
+}

@@ -8,6 +8,9 @@ class ModelMetric(BaseModel):
     f1: float
     roc_auc: float
     accuracy: float
+    precision: float | None = None
+    recall: float | None = None
+    threshold: float | None = None
 
 
 class RiskDistribution(BaseModel):
@@ -27,6 +30,9 @@ class DashboardSummary(BaseModel):
     predicted_churn_rate: float
     best_model_accuracy: float
     best_model_name: str
+    model_version: str | None = None
+    risk_threshold_high: float | None = None
+    risk_threshold_medium: float | None = None
     risk_distribution: RiskDistribution
     churn_distribution: ChurnDistribution
     model_metrics: list[ModelMetric]
@@ -50,6 +56,7 @@ class SmsStats(BaseModel):
     failed: int
     dry_run_count: int
     real_count: int
+    real_successful: int = 0
 
 
 class RetentionStats(BaseModel):

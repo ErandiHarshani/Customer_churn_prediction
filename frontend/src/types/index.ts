@@ -5,6 +5,9 @@ export interface ModelMetric {
   f1: number;
   roc_auc: number;
   accuracy: number;
+  precision?: number | null;
+  recall?: number | null;
+  threshold?: number | null;
 }
 
 export interface RiskDistribution {
@@ -24,6 +27,9 @@ export interface DashboardSummary {
   predicted_churn_rate: number;
   best_model_accuracy: number;
   best_model_name: string;
+  model_version?: string | null;
+  risk_threshold_high?: number | null;
+  risk_threshold_medium?: number | null;
   risk_distribution: RiskDistribution;
   churn_distribution: ChurnDistribution;
   model_metrics: ModelMetric[];
@@ -122,32 +128,25 @@ export interface CustomerDetail {
 }
 
 export interface CustomerFieldOptions {
-  preferred_login_device: string[];
   preferred_payment_mode: string[];
-  gender: string[];
   prefered_order_cat: string[];
   marital_status: string[];
 }
 
+/** The 12 model inputs are required; review feeds the sentiment input; the rest is stored only. */
 export interface CreateCustomerRequest {
   tenure: number;
   city_tier: number;
   warehouse_to_home: number;
-  preferred_login_device: string;
-  preferred_payment_mode: string;
-  gender: string;
-  hour_spend_on_app: number;
   number_of_device_registered: number;
-  prefered_order_cat: string;
   satisfaction_score: number;
-  marital_status: string;
   number_of_address: number;
   complain: number;
-  order_amount_hike_from_last_year: number;
-  coupon_used: number;
-  order_count: number;
   day_since_last_order: number;
   cashback_amount: number;
+  preferred_payment_mode: string;
+  prefered_order_cat: string;
+  marital_status: string;
   review_text?: string;
   phone_number?: string;
   last_product_purchased?: string;
@@ -198,6 +197,7 @@ export interface SmsStats {
   failed: number;
   dry_run_count: number;
   real_count: number;
+  real_successful: number;
 }
 
 export interface RetentionStats {
@@ -223,7 +223,6 @@ export interface EngagementAnalytics {
 }
 
 export interface RiskExample {
-  customer_id: number;
   churn_probability: number;
   risk_level: RiskLevel;
 }
@@ -231,6 +230,8 @@ export interface RiskExample {
 export interface LoginStats {
   total_customers: number;
   best_model_auc: number;
+  model_name: string;
+  model_version: string;
   risk_examples: RiskExample[];
   last_scored_at: string | null;
 }

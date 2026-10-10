@@ -49,13 +49,12 @@ def get_summary(
     non_churned = db.query(func.count(Customer.id)).filter(Customer.actual_churn == 0).scalar() or 0
     churn_distribution = ChurnDistribution(churn=churned, non_churn=non_churned)
 
-    curves = compute_model_curves()
-    best_model_name = max(curves, key=lambda name: curves[name]["auc"])
-    best_model_accuracy = curves[best_model_name]["accuracy"]
+    # The serving model is the one chosen by cross-validation during training
+    # (model_meta.json), and every metric is from the held-out test split.
+    best_model_name = artifacts.model_name
+    best_model_accuracy = artifacts.metrics["models"][best_model_name]["accuracy"]
 
-    model_metrics = [
-        ModelMetric(**m, accuracy=curves[m["name"]]["accuracy"]) for m in artifacts.model_comparison
-    ]
+    model_metrics = [ModelMetric(**m) for m in artifacts.model_comparison]
 
     return DashboardSummary(
         total_customers=total,
@@ -63,6 +62,9 @@ def get_summary(
         predicted_churn_rate=float(predicted_churn_rate),
         best_model_accuracy=best_model_accuracy,
         best_model_name=best_model_name,
+        model_version=artifacts.model_version,
+        risk_threshold_high=artifacts.threshold_high,
+        risk_threshold_medium=artifacts.threshold_medium,
         risk_distribution=risk_distribution,
         churn_distribution=churn_distribution,
         model_metrics=model_metrics,
@@ -91,6 +93,8 @@ def get_engagement(db: Session = Depends(get_db), _user: str = Depends(get_curre
         failed=sms_count(success=False),
         dry_run_count=sms_count(dry_run=True),
         real_count=sms_count(dry_run=False),
+        # provider accepted the submission; dry-runs never reach a provider
+        real_successful=sms_count(success=True, dry_run=False),
     )
 
     def retention_count(**filters) -> int:

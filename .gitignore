@@ -25,3 +25,5 @@ dist/
 backend-bk/
 front-bk/
 mlpart - bk/
+!.env.example
+mlpart/churn_prediction_project/artifacts_v1/

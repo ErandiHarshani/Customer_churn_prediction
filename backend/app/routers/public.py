@@ -13,7 +13,6 @@ router = APIRouter(prefix="/api/public", tags=["public"])
 
 
 class RiskExample(BaseModel):
-    customer_id: int
     churn_probability: float
     risk_level: str
 
@@ -21,6 +20,8 @@ class RiskExample(BaseModel):
 class LoginStats(BaseModel):
     total_customers: int
     best_model_auc: float
+    model_name: str
+    model_version: str
     risk_examples: list[RiskExample]
     last_scored_at: datetime | None
 
@@ -28,11 +29,10 @@ class LoginStats(BaseModel):
 @router.get("/login-stats", response_model=LoginStats)
 def login_stats(db: Session = Depends(get_db), artifacts: MLArtifacts = Depends(get_artifacts)):
     """Unauthenticated on purpose — this only powers the illustrative panel on the
-    login screen, before anyone has a JWT. Only ever returns aggregate stats and
-    customer_id + churn_probability (no name/phone/PII), sourced live from the same
-    DB and model artifacts the authenticated dashboard uses."""
+    login screen, before anyone has a JWT. Returns aggregate stats and anonymous
+    example probabilities only: no customer IDs, names or phone numbers."""
     total = db.query(func.count(Customer.id)).scalar() or 0
-    best_auc = max((m["roc_auc"] for m in artifacts.model_comparison), default=0.0)
+    best_auc = artifacts.metrics["models"][artifacts.model_name]["roc_auc"]
 
     def pick(risk_level: str, order_desc: bool):
         q = db.query(Customer).filter(Customer.risk_level == risk_level)
@@ -46,9 +46,7 @@ def login_stats(db: Session = Depends(get_db), artifacts: MLArtifacts = Depends(
     ]
 
     examples = [
-        RiskExample(
-            customer_id=c.customer_id, churn_probability=c.churn_probability, risk_level=c.risk_level
-        )
+        RiskExample(churn_probability=c.churn_probability, risk_level=c.risk_level)
         for c in candidates
         if c is not None
     ]
@@ -58,6 +56,8 @@ def login_stats(db: Session = Depends(get_db), artifacts: MLArtifacts = Depends(
     return LoginStats(
         total_customers=total,
         best_model_auc=best_auc,
+        model_name=artifacts.model_name,
+        model_version=artifacts.model_version,
         risk_examples=examples,
         last_scored_at=last_scored_at,
     )

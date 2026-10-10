@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ReactNode, type SyntheticEvent } from "react";
 import Box from "@mui/material/Box";
 import Grid from "@mui/material/Grid";
 import Card from "@mui/material/Card";
@@ -15,79 +15,102 @@ import Switch from "@mui/material/Switch";
 import IconButton from "@mui/material/IconButton";
 import InputAdornment from "@mui/material/InputAdornment";
 import Chip from "@mui/material/Chip";
+import Skeleton from "@mui/material/Skeleton";
+import Tooltip from "@mui/material/Tooltip";
 import RefreshIcon from "@mui/icons-material/Refresh";
 import VisibilityIcon from "@mui/icons-material/Visibility";
 import VisibilityOffIcon from "@mui/icons-material/VisibilityOff";
 import SmsIcon from "@mui/icons-material/Sms";
 import AutoAwesomeIcon from "@mui/icons-material/AutoAwesome";
-import {
-  getSmsBalance,
-  getSmsGatewaySettings,
-  updateSmsGatewaySettings,
-} from "../api/smsGateway";
-import {
-  getGeminiModelInfo,
-  getGeminiSettings,
-  updateGeminiSettings,
-} from "../api/geminiSettings";
+import { getSmsBalance, getSmsGatewaySettings, updateSmsGatewaySettings } from "../api/smsGateway";
+import { getGeminiModelInfo, getGeminiSettings, updateGeminiSettings } from "../api/geminiSettings";
 import { getEngagementAnalytics } from "../api/dashboard";
-import type {
-  GeminiModelInfo,
-  GeminiSettings,
-  RetentionStats,
-  SmsBalance,
-  SmsGatewaySettings,
-} from "../types";
+import { PageHeader } from "../components/PageHeader";
+import { ErrorState, PageSkeleton } from "../components/PageStates";
+import { IconDisc } from "../components/StatCard";
+import { useConfirm } from "../components/feedback/confirmContext";
+import { useToast } from "../components/feedback/toastContext";
+import { apiErrorMessage } from "../utils/apiError";
+import { SMS_SETTINGS_CHANGED } from "../utils/events";
+import type { GeminiModelInfo, GeminiSettings, RetentionStats, SmsBalance, SmsGatewaySettings } from "../types";
 
-const EMPTY_SMS_SETTINGS: SmsGatewaySettings = {
-  user_id: "",
-  api_key: "",
-  sender_id: "NotifyDEMO",
-  dry_run: true,
-};
+/** Password-style input with an accessible show/hide toggle. */
+function SecretField({ label, value, onChange }: { label: string; value: string; onChange: (v: string) => void }) {
+  const [shown, setShown] = useState(false);
+  return (
+    <TextField
+      label={label}
+      size="small"
+      type={shown ? "text" : "password"}
+      value={value}
+      onChange={(e) => onChange(e.target.value)}
+      autoComplete="off"
+      fullWidth
+      slotProps={{
+        input: {
+          endAdornment: (
+            <InputAdornment position="end">
+              <Tooltip title={shown ? `Hide ${label}` : `Show ${label}`}>
+                <IconButton
+                  onClick={() => setShown((v) => !v)}
+                  edge="end"
+                  size="small"
+                  aria-label={shown ? `Hide ${label}` : `Show ${label}`}
+                >
+                  {shown ? <VisibilityOffIcon /> : <VisibilityIcon />}
+                </IconButton>
+              </Tooltip>
+            </InputAdornment>
+          ),
+        },
+      }}
+    />
+  );
+}
 
-const EMPTY_GEMINI_SETTINGS: GeminiSettings = {
-  api_key: "",
-  model_name: "gemini-3.5-flash-lite",
-};
+/** Card title with a labelled "check again" button. */
+function StatusCardHeader({ title, refreshLabel, onRefresh, busy }: { title: string; refreshLabel: string; onRefresh: () => void; busy: boolean }) {
+  return (
+    <Box sx={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+      <Typography variant="subtitle1">{title}</Typography>
+      <Tooltip title={refreshLabel}>
+        <span>
+          <IconButton onClick={onRefresh} disabled={busy} size="small" aria-label={refreshLabel}>
+            {busy ? <CircularProgress size={18} /> : <RefreshIcon />}
+          </IconButton>
+        </span>
+      </Tooltip>
+    </Box>
+  );
+}
+
+function CardStatus({ loading, error, children }: { loading: boolean; error: string | null; children: ReactNode }) {
+  if (loading) return <Skeleton variant="rounded" height={56} />;
+  if (error) return <Alert severity="warning">{error}</Alert>;
+  return <>{children}</>;
+}
 
 export function SmsGatewaySettingsPage() {
-  const [settings, setSettings] = useState<SmsGatewaySettings>(EMPTY_SMS_SETTINGS);
-  const [loading, setLoading] = useState(true);
+  const confirm = useConfirm();
+  const toast = useToast();
+
+  // nothing editable is shown until the real settings have loaded, so a failed
+  // load can never be saved back over the stored credentials as blank defaults
+  const [sms, setSms] = useState<SmsGatewaySettings | null>(null);
+  const [savedDryRun, setSavedDryRun] = useState(true);
+  const [gemini, setGemini] = useState<GeminiSettings | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [retryTick, setRetryTick] = useState(0);
   const [saving, setSaving] = useState(false);
-  const [showApiKey, setShowApiKey] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [saved, setSaved] = useState(false);
+  const [geminiSaving, setGeminiSaving] = useState(false);
 
   const [balance, setBalance] = useState<SmsBalance | null>(null);
-  const [balanceLoading, setBalanceLoading] = useState(false);
+  const [balanceLoading, setBalanceLoading] = useState(true);
   const [balanceError, setBalanceError] = useState<string | null>(null);
-
-  const [gemini, setGemini] = useState<GeminiSettings>(EMPTY_GEMINI_SETTINGS);
-  const [geminiLoading, setGeminiLoading] = useState(true);
-  const [geminiSaving, setGeminiSaving] = useState(false);
-  const [showGeminiKey, setShowGeminiKey] = useState(false);
-  const [geminiError, setGeminiError] = useState<string | null>(null);
-  const [geminiSaved, setGeminiSaved] = useState(false);
-
   const [modelInfo, setModelInfo] = useState<GeminiModelInfo | null>(null);
-  const [modelInfoLoading, setModelInfoLoading] = useState(false);
+  const [modelInfoLoading, setModelInfoLoading] = useState(true);
   const [modelInfoError, setModelInfoError] = useState<string | null>(null);
   const [retentionStats, setRetentionStats] = useState<RetentionStats | null>(null);
-
-  useEffect(() => {
-    getSmsGatewaySettings()
-      .then(setSettings)
-      .finally(() => setLoading(false));
-    refreshBalance();
-
-    getGeminiSettings()
-      .then(setGemini)
-      .finally(() => setGeminiLoading(false));
-    refreshModelInfo();
-
-    getEngagementAnalytics().then((data) => setRetentionStats(data.retention_stats));
-  }, []);
 
   function refreshBalance() {
     setBalanceLoading(true);
@@ -96,7 +119,7 @@ export function SmsGatewaySettingsPage() {
       .then(setBalance)
       .catch((e) => {
         setBalance(null);
-        setBalanceError(e?.response?.data?.detail ?? "Could not check SMS balance.");
+        setBalanceError(apiErrorMessage(e, "Could not check the SMS balance."));
       })
       .finally(() => setBalanceLoading(false));
   }
@@ -108,298 +131,296 @@ export function SmsGatewaySettingsPage() {
       .then(setModelInfo)
       .catch((e) => {
         setModelInfo(null);
-        setModelInfoError(e?.response?.data?.detail ?? "Could not reach Gemini.");
+        setModelInfoError(apiErrorMessage(e, "Could not reach Gemini."));
       })
       .finally(() => setModelInfoLoading(false));
   }
 
-  async function handleSave() {
+  useEffect(() => {
+    let stale = false;
+    Promise.all([getSmsGatewaySettings(), getGeminiSettings()])
+      .then(([s, g]) => {
+        if (stale) return;
+        setSms(s);
+        setSavedDryRun(s.dry_run);
+        setGemini(g);
+      })
+      .catch((e) => !stale && setLoadError(apiErrorMessage(e, "Could not load the settings.")));
+    getEngagementAnalytics()
+      .then((d) => !stale && setRetentionStats(d.retention_stats))
+      .catch(() => undefined); // optional stats; the page works without them
+    return () => {
+      stale = true;
+    };
+  }, [retryTick]);
+
+  // first check on mount (loading flags start true; later checks use refresh*)
+  useEffect(() => {
+    getSmsBalance()
+      .then(setBalance)
+      .catch((e) => setBalanceError(apiErrorMessage(e, "Could not check the SMS balance.")))
+      .finally(() => setBalanceLoading(false));
+    getGeminiModelInfo()
+      .then(setModelInfo)
+      .catch((e) => setModelInfoError(apiErrorMessage(e, "Could not reach Gemini.")))
+      .finally(() => setModelInfoLoading(false));
+  }, []);
+
+  async function handleSave(e: SyntheticEvent) {
+    e.preventDefault();
+    if (!sms) return;
+    if (savedDryRun && !sms.dry_run) {
+      const ok = await confirm({
+        title: "Turn off dry-run?",
+        body: "From now on, every \"Send SMS\" delivers a real message to the customer's phone and is charged to your Notify.lk balance.",
+        confirmText: "Switch to live",
+        tone: "danger",
+      });
+      if (!ok) return;
+    }
     setSaving(true);
-    setError(null);
-    setSaved(false);
     try {
-      const result = await updateSmsGatewaySettings(settings);
-      setSettings(result);
-      setSaved(true);
+      const result = await updateSmsGatewaySettings({
+        ...sms,
+        user_id: sms.user_id.trim(),
+        api_key: sms.api_key.trim(),
+        sender_id: sms.sender_id.trim(),
+      });
+      setSms(result);
+      setSavedDryRun(result.dry_run);
+      window.dispatchEvent(new Event(SMS_SETTINGS_CHANGED));
+      toast.success(result.dry_run ? "SMS settings saved (dry-run on)." : "SMS settings saved — live sending is ON.");
       refreshBalance();
-    } catch (e: any) {
-      setError(e?.response?.data?.detail ?? "Could not save settings.");
+    } catch (err) {
+      toast.error(apiErrorMessage(err, "Could not save the SMS settings."));
     } finally {
       setSaving(false);
     }
   }
 
-  async function handleSaveGemini() {
+  async function handleSaveGemini(e: SyntheticEvent) {
+    e.preventDefault();
+    if (!gemini) return;
     setGeminiSaving(true);
-    setGeminiError(null);
-    setGeminiSaved(false);
     try {
-      const result = await updateGeminiSettings(gemini);
+      const result = await updateGeminiSettings({ api_key: gemini.api_key.trim(), model_name: gemini.model_name.trim() });
       setGemini(result);
-      setGeminiSaved(true);
+      toast.success("Gemini settings saved.");
       refreshModelInfo();
-    } catch (e: any) {
-      setGeminiError(e?.response?.data?.detail ?? "Could not save settings.");
+    } catch (err) {
+      toast.error(apiErrorMessage(err, "Could not save the Gemini settings."));
     } finally {
       setGeminiSaving(false);
     }
   }
 
-  if (loading || geminiLoading) {
+  const header = (
+    <PageHeader
+      title="SMS & AI Settings"
+      subtitle="Credentials for the Notify.lk SMS gateway and the Gemini model that writes retention messages."
+    />
+  );
+
+  if (loadError) {
     return (
-      <Box sx={{ display: "flex", justifyContent: "center", mt: 8 }}>
-        <CircularProgress />
+      <Box>
+        {header}
+        <ErrorState
+          message={loadError}
+          onRetry={() => {
+            setLoadError(null);
+            setRetryTick((t) => t + 1);
+          }}
+        />
       </Box>
     );
   }
 
+  if (!sms || !gemini) {
+    return <PageSkeleton cards={0} tall={2} />;
+  }
+
+  const senderTooLong = sms.sender_id.trim().length > 11;
+
   return (
     <Box>
-      <Typography variant="h5" sx={{ mb: 3 }}>
-        SMS Gateway Setup
-      </Typography>
+      {header}
 
       <Grid container spacing={3}>
         <Grid size={{ xs: 12, md: 6 }}>
-          <Card variant="outlined" sx={{ mb: 3 }}>
-            <CardContent>
-              <Typography variant="subtitle1" gutterBottom>
-                Notify.lk credentials
-              </Typography>
-              <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-                Stored in the database so they can be changed here without restarting the
-                backend or editing .env.
-              </Typography>
+          <Stack spacing={3}>
+            <Card variant="outlined">
+              <CardContent component="form" onSubmit={handleSave}>
+                <Typography variant="subtitle1" gutterBottom>
+                  Notify.lk SMS gateway
+                </Typography>
+                <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+                  Saved in the database, so changes apply immediately without restarting the backend.
+                </Typography>
 
-              <Stack spacing={2}>
-                <TextField
-                  label="User ID"
-                  size="small"
-                  value={settings.user_id}
-                  onChange={(e) => setSettings({ ...settings, user_id: e.target.value })}
-                  fullWidth
-                />
-                <TextField
-                  label="API key"
-                  size="small"
-                  type={showApiKey ? "text" : "password"}
-                  value={settings.api_key}
-                  onChange={(e) => setSettings({ ...settings, api_key: e.target.value })}
-                  fullWidth
-                  slotProps={{
-                    input: {
-                      endAdornment: (
-                        <InputAdornment position="end">
-                          <IconButton
-                            onClick={() => setShowApiKey((v) => !v)}
-                            edge="end"
-                            size="small"
-                          >
-                            {showApiKey ? <VisibilityOffIcon /> : <VisibilityIcon />}
-                          </IconButton>
-                        </InputAdornment>
-                      ),
-                    },
-                  }}
-                />
-                <TextField
-                  label="Sender ID"
-                  size="small"
-                  value={settings.sender_id}
-                  onChange={(e) => setSettings({ ...settings, sender_id: e.target.value })}
-                  helperText=''
-                  fullWidth
-                />
-                <FormControlLabel
-                  control={
-                    <Switch
-                      checked={settings.dry_run}
-                      onChange={(e) => setSettings({ ...settings, dry_run: e.target.checked })}
-                    />
-                  }
-                  label={
-                    settings.dry_run
-                      ? "Dry-run mode (no real SMS sent)"
-                      : "Live mode (real SMS will be sent)"
-                  }
-                />
-
-                {error && <Alert severity="error">{error}</Alert>}
-                {saved && !error && <Alert severity="success">Settings saved.</Alert>}
-
-                <Box>
-                  <Button
-                    variant="contained"
-                    onClick={handleSave}
-                    disabled={saving}
-                    startIcon={saving ? <CircularProgress size={16} color="inherit" /> : undefined}
-                  >
-                    Save
-                  </Button>
-                </Box>
-              </Stack>
-            </CardContent>
-          </Card>
-
-          <Card variant="outlined">
-            <CardContent>
-              <Box sx={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                <Typography variant="subtitle1">Account balance</Typography>
-                <IconButton onClick={refreshBalance} disabled={balanceLoading} size="small">
-                  <RefreshIcon />
-                </IconButton>
-              </Box>
-
-              <Divider sx={{ my: 1.5 }} />
-
-              {balanceLoading ? (
-                <Box sx={{ display: "flex", justifyContent: "center", py: 2 }}>
-                  <CircularProgress size={24} />
-                </Box>
-              ) : balanceError ? (
-                <Alert severity="warning">{balanceError}</Alert>
-              ) : balance ? (
-                <Box sx={{ display: "flex", alignItems: "center", gap: 2 }}>
-                  <SmsIcon color="action" />
-                  <Box>
-                    <Typography variant="h5">{balance.balance.toFixed(2)}</Typography>
-                    <Typography variant="caption" color="text.secondary">
-                      Notify.lk account balance
-                    </Typography>
-                  </Box>
-                  <Chip
+                <Stack spacing={2}>
+                  <TextField
+                    label="User ID"
                     size="small"
-                    label={balance.active ? "account active" : "account inactive"}
-                    color={balance.active ? "success" : "error"}
-                    sx={{ ml: "auto" }}
+                    value={sms.user_id}
+                    onChange={(e) => setSms({ ...sms, user_id: e.target.value })}
+                    autoComplete="off"
+                    fullWidth
                   />
-                </Box>
-              ) : null}
-            </CardContent>
-          </Card>
+                  <SecretField label="API key" value={sms.api_key} onChange={(v) => setSms({ ...sms, api_key: v })} />
+                  <TextField
+                    label="Sender ID"
+                    size="small"
+                    value={sms.sender_id}
+                    onChange={(e) => setSms({ ...sms, sender_id: e.target.value })}
+                    error={senderTooLong}
+                    helperText={senderTooLong ? "Sender IDs are at most 11 characters" : "The name customers see, e.g. NotifyDEMO"}
+                    fullWidth
+                  />
+                  <Box>
+                    <FormControlLabel
+                      control={
+                        <Switch
+                          checked={sms.dry_run}
+                          onChange={(e) => setSms({ ...sms, dry_run: e.target.checked })}
+                        />
+                      }
+                      label={sms.dry_run ? "Dry-run — sends are simulated" : "Live — real SMS are sent and charged"}
+                    />
+                    {!sms.dry_run && (
+                      <Alert severity="warning" sx={{ mt: 1 }}>
+                        Live sending {savedDryRun ? "will be turned on when you save" : "is on"}: every Send SMS reaches a real phone.
+                      </Alert>
+                    )}
+                  </Box>
+
+                  <Box sx={{ display: "flex", justifyContent: "flex-end" }}>
+                    <Button
+                      type="submit"
+                      variant="contained"
+                      disabled={saving || senderTooLong}
+                      startIcon={saving ? <CircularProgress size={16} color="inherit" /> : undefined}
+                    >
+                      {saving ? "Saving…" : "Save SMS settings"}
+                    </Button>
+                  </Box>
+                </Stack>
+              </CardContent>
+            </Card>
+
+            <Card variant="outlined">
+              <CardContent>
+                <StatusCardHeader
+                  title="Account balance"
+                  refreshLabel="Check balance again"
+                  onRefresh={refreshBalance}
+                  busy={balanceLoading}
+                />
+                <Divider sx={{ my: 1.5 }} />
+                <CardStatus loading={balanceLoading} error={balanceError}>
+                  {balance && (
+                    <Box sx={{ display: "flex", alignItems: "center", gap: 2 }}>
+                      <IconDisc>
+                        <SmsIcon />
+                      </IconDisc>
+                      <Box>
+                        <Typography variant="h5" component="p">
+                          LKR {balance.balance.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                        </Typography>
+                        <Typography variant="caption" color="text.secondary">
+                          Notify.lk account balance
+                        </Typography>
+                      </Box>
+                      <Chip
+                        size="small"
+                        label={balance.active ? "Account active" : "Account inactive"}
+                        color={balance.active ? "success" : "error"}
+                        sx={{ ml: "auto" }}
+                      />
+                    </Box>
+                  )}
+                </CardStatus>
+              </CardContent>
+            </Card>
+          </Stack>
         </Grid>
 
         <Grid size={{ xs: 12, md: 6 }}>
-          <Card variant="outlined" sx={{ mb: 3 }}>
-            <CardContent>
-              <Typography variant="subtitle1" gutterBottom>
-                Google Gemini credentials
-              </Typography>
-              <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-                Used to generate retention SMS text. Also stored in the database instead
-                of .env.
-              </Typography>
+          <Stack spacing={3}>
+            <Card variant="outlined">
+              <CardContent component="form" onSubmit={handleSaveGemini}>
+                <Typography variant="subtitle1" gutterBottom>
+                  Google Gemini
+                </Typography>
+                <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+                  Writes the personalised retention SMS and scores review sentiment.
+                </Typography>
 
-              <Stack spacing={2}>
-                <TextField
-                  label="API key"
-                  size="small"
-                  type={showGeminiKey ? "text" : "password"}
-                  value={gemini.api_key}
-                  onChange={(e) => setGemini({ ...gemini, api_key: e.target.value })}
-                  fullWidth
-                  slotProps={{
-                    input: {
-                      endAdornment: (
-                        <InputAdornment position="end">
-                          <IconButton
-                            onClick={() => setShowGeminiKey((v) => !v)}
-                            edge="end"
-                            size="small"
-                          >
-                            {showGeminiKey ? <VisibilityOffIcon /> : <VisibilityIcon />}
-                          </IconButton>
-                        </InputAdornment>
-                      ),
-                    },
-                  }}
-                />
-                <TextField
-                  label="Model name"
-                  size="small"
-                  value={gemini.model_name}
-                  onChange={(e) => setGemini({ ...gemini, model_name: e.target.value })}
-                  helperText="e.g. gemini-3.5-flash-lite"
-                  fullWidth
-                />
-
-                {geminiError && <Alert severity="error">{geminiError}</Alert>}
-                {geminiSaved && !geminiError && <Alert severity="success">Settings saved.</Alert>}
-
-                <Box>
-                  <Button
-                    variant="contained"
-                    onClick={handleSaveGemini}
-                    disabled={geminiSaving}
-                    startIcon={
-                      geminiSaving ? <CircularProgress size={16} color="inherit" /> : undefined
-                    }
-                  >
-                    Save
-                  </Button>
-                </Box>
-              </Stack>
-            </CardContent>
-          </Card>
-
-          <Card variant="outlined">
-            <CardContent>
-              <Box sx={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                <Typography variant="subtitle1">Model details</Typography>
-                <IconButton onClick={refreshModelInfo} disabled={modelInfoLoading} size="small">
-                  <RefreshIcon />
-                </IconButton>
-              </Box>
-
-              <Divider sx={{ my: 1.5 }} />
-
-              {modelInfoLoading ? (
-                <Box sx={{ display: "flex", justifyContent: "center", py: 2 }}>
-                  <CircularProgress size={24} />
-                </Box>
-              ) : modelInfoError ? (
-                <Alert severity="warning">{modelInfoError}</Alert>
-              ) : modelInfo ? (
-                <Box sx={{ display: "flex", alignItems: "flex-start", gap: 2, mb: 2 }}>
-                  <AutoAwesomeIcon color="action" sx={{ mt: 0.5 }} />
-                  <Box sx={{ flex: 1 }}>
-                    <Typography variant="subtitle2">{modelInfo.display_name}</Typography>
-                    <Typography variant="caption" color="text.secondary" sx={{ display: "block" }}>
-                      Input limit: {modelInfo.input_token_limit.toLocaleString()} tokens · Output
-                      limit: {modelInfo.output_token_limit.toLocaleString()} tokens
-                    </Typography>
-                    <Box sx={{ display: "flex", gap: 0.5, flexWrap: "wrap", mt: 1 }}>
-                      {modelInfo.supported_actions.map((action) => (
-                        <Chip key={action} size="small" variant="outlined" label={action} />
-                      ))}
-                    </Box>
+                <Stack spacing={2}>
+                  <SecretField label="Gemini API key" value={gemini.api_key} onChange={(v) => setGemini({ ...gemini, api_key: v })} />
+                  <TextField
+                    label="Model name"
+                    size="small"
+                    value={gemini.model_name}
+                    onChange={(e) => setGemini({ ...gemini, model_name: e.target.value })}
+                    helperText="e.g. gemini-3.5-flash-lite"
+                    fullWidth
+                  />
+                  <Box sx={{ display: "flex", justifyContent: "flex-end" }}>
+                    <Button
+                      type="submit"
+                      variant="contained"
+                      disabled={geminiSaving || !gemini.model_name.trim()}
+                      startIcon={geminiSaving ? <CircularProgress size={16} color="inherit" /> : undefined}
+                    >
+                      {geminiSaving ? "Saving…" : "Save Gemini settings"}
+                    </Button>
                   </Box>
-                </Box>
-              ) : null}
+                </Stack>
+              </CardContent>
+            </Card>
 
-              
+            <Card variant="outlined">
+              <CardContent>
+                <StatusCardHeader
+                  title="Model status"
+                  refreshLabel="Check Gemini connection again"
+                  onRefresh={refreshModelInfo}
+                  busy={modelInfoLoading}
+                />
+                <Divider sx={{ my: 1.5 }} />
+                <CardStatus loading={modelInfoLoading} error={modelInfoError}>
+                  {modelInfo && (
+                    <Box sx={{ display: "flex", alignItems: "flex-start", gap: 2 }}>
+                      <IconDisc>
+                        <AutoAwesomeIcon />
+                      </IconDisc>
+                      <Box sx={{ flex: 1, minWidth: 0 }}>
+                        <Typography variant="subtitle2">{modelInfo.display_name} — connected</Typography>
+                        <Typography variant="caption" color="text.secondary" sx={{ display: "block" }}>
+                          Input limit {modelInfo.input_token_limit.toLocaleString()} tokens · output limit{" "}
+                          {modelInfo.output_token_limit.toLocaleString()} tokens
+                        </Typography>
+                      </Box>
+                    </Box>
+                  )}
+                </CardStatus>
 
-              {retentionStats && (
-                <Box sx={{ display: "flex", gap: 1, flexWrap: "wrap", mt: 1 }}>
-                  <Chip
-                    size="small"
-                    label={`${retentionStats.total_generated} messages generated`}
-                  />
-                  <Chip
-                    size="small"
-                    color="primary"
-                    variant="outlined"
-                    label={`${retentionStats.gemini_generated} via Gemini`}
-                  />
-                  <Chip
-                    size="small"
-                    variant="outlined"
-                    label={`${retentionStats.fallback_generated} fallback`}
-                  />
-                </Box>
-              )}
-            </CardContent>
-          </Card>
+                {retentionStats && (
+                  <>
+                    <Typography variant="subtitle2" sx={{ mt: 2.5, mb: 1 }}>
+                      Retention messages so far
+                    </Typography>
+                    <Box sx={{ display: "flex", gap: 1, flexWrap: "wrap" }}>
+                      <Chip size="small" label={`${retentionStats.total_generated.toLocaleString()} generated`} />
+                      <Chip size="small" color="primary" variant="outlined" label={`${retentionStats.gemini_generated.toLocaleString()} by Gemini`} />
+                      <Chip size="small" variant="outlined" label={`${retentionStats.fallback_generated.toLocaleString()} standard`} />
+                    </Box>
+                  </>
+                )}
+              </CardContent>
+            </Card>
+          </Stack>
         </Grid>
       </Grid>
     </Box>

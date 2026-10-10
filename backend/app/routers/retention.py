@@ -63,13 +63,12 @@ def _build_customer_facts(customer: Customer) -> list[str]:
     if customer.complain:
         facts.append("filed a complaint recently")
     if customer.cashback_amount:
-        facts.append(f"has {customer.cashback_amount:.0f} in unused cashback")
+        facts.append(f"has earned {customer.cashback_amount:.0f} in cashback rewards so far")
     # only reference sentiment/review content if it's genuinely this customer's own
     # input — for seeded training-data customers it's a simulated linkage, not real
     if (
         not customer.review_is_synthetic
-        and customer.sentiment_label
-        and customer.sentiment_label != "neutral"
+        and customer.sentiment_label in ("negative", "positive")
     ):
         facts.append(f"their overall sentiment towards the store is {customer.sentiment_label}")
     if customer.prefered_order_cat:
