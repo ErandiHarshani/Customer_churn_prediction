@@ -13,13 +13,15 @@ import CircularProgress from "@mui/material/CircularProgress";
 import GlobalStyles from "@mui/material/GlobalStyles";
 import { useAuth } from "../context/AuthContext";
 import { getLoginStats } from "../api/dashboard";
+import { formatProbability } from "../utils/format";
 import type { LoginStats } from "../types";
 
 /* ------------------------------------------------------------------ */
 /*  Design tokens                                                      */
 /* ------------------------------------------------------------------ */
 const T = {
-  ink: "#14162B", // deep indigo canvas
+  ink: "#14162B", // primary text
+  panel: "#EEF0FB", // light signal-panel canvas
   ink2: "#1E2144",
   paper: "#FFFFFF",
   wash: "#F6F6FB", // input rest state
@@ -27,9 +29,9 @@ const T = {
   body: "#4B4B63",
   muted: "#8A89A6",
   signal: "#7C6BFF", // brand violet
-  retain: "#2FCBAF", // teal  — customer stays
-  risk: "#F0477E", // pink  — customer leaves
-  amber: "#FFB547",
+  retain: "#13A08A", // teal  — customer stays
+  risk: "#E0336B", // pink  — customer leaves
+  amber: "#D98A00",
 };
 
 /* ------------------------------------------------------------------ */
@@ -80,7 +82,7 @@ const enter = (delay: number) => ({
 /* ------------------------------------------------------------------ */
 /*  Brand mark — a 4-node inference graph                              */
 /* ------------------------------------------------------------------ */
-function Mark({ size = 30, tone = "#fff" }: { size?: number; tone?: string }) {
+function Mark({ size = 30, tone = T.ink }: { size?: number; tone?: string }) {
   return (
     <Box component="svg" viewBox="0 0 32 32" sx={{ width: size, height: size, flexShrink: 0 }}>
       <path
@@ -114,7 +116,7 @@ function PredictionFork() {
 
       {/* baseline grid */}
       {[28, 58, 88].map((y) => (
-        <line key={y} x1="8" y1={y} x2="322" y2={y} stroke="#fff" strokeOpacity=".07" strokeWidth="1" />
+        <line key={y} x1="8" y1={y} x2="322" y2={y} stroke={T.ink} strokeOpacity=".08" strokeWidth="1" />
       ))}
 
       {/* observed history */}
@@ -132,9 +134,9 @@ function PredictionFork() {
       />
 
       {/* split marker */}
-      <line x1="182" y1="14" x2="182" y2="112" stroke="#fff" strokeOpacity=".22" strokeDasharray="3 4" />
-      <circle cx="182" cy="50" r="5" fill="#fff" />
-      <circle cx="182" cy="50" r="9" fill="#fff" fillOpacity=".18" />
+      <line x1="182" y1="14" x2="182" y2="112" stroke={T.ink} strokeOpacity=".25" strokeDasharray="3 4" />
+      <circle cx="182" cy="50" r="5" fill={T.ink} />
+      <circle cx="182" cy="50" r="9" fill={T.ink} fillOpacity=".12" />
 
       {/* forecast — retained */}
       <path
@@ -183,14 +185,14 @@ function ScoredRow({ row, index, isLast }: { row: ScoredRowData; index: number; 
   return (
     <Box sx={{ ...enter(1100 + index * 130), mb: isLast ? 0 : 1.25 }}>
       <Box sx={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", mb: 0.9 }}>
-        <Typography sx={{ fontSize: 13.5, fontWeight: 500, color: "rgba(255,255,255,.88)" }}>
+        <Typography sx={{ fontSize: 13.5, fontWeight: 500, color: "rgba(20,22,43,0.88)" }}>
           {row.name}
         </Typography>
         <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
           <Typography
             sx={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 12.5, color: row.tone, fontWeight: 500 }}
           >
-            {row.score.toFixed(2)}
+            {formatProbability(row.score)}
           </Typography>
           <Box
             sx={{
@@ -208,7 +210,7 @@ function ScoredRow({ row, index, isLast }: { row: ScoredRowData; index: number; 
           </Box>
         </Box>
       </Box>
-      <Box sx={{ height: 5, borderRadius: 99, bgcolor: "rgba(255,255,255,.09)", overflow: "hidden" }}>
+      <Box sx={{ height: 5, borderRadius: 99, bgcolor: "rgba(20,22,43,0.08)", overflow: "hidden" }}>
         <Box
           sx={{
             height: "100%",
@@ -246,7 +248,7 @@ export function LoginPage() {
   }, []);
 
   const scoredRows: ScoredRowData[] = (stats?.risk_examples ?? []).map((e) => ({
-    name: `Account #${e.customer_id}`,
+    name: `${e.risk_level.charAt(0).toUpperCase()}${e.risk_level.slice(1)}-risk example`,
     score: e.churn_probability,
     tone: RISK_META[e.risk_level]?.tone ?? T.muted,
     label: RISK_META[e.risk_level]?.label ?? e.risk_level,
@@ -315,7 +317,7 @@ export function LoginPage() {
             overflow: "hidden",
             flexDirection: "column",
             justifyContent: "space-between",
-            bgcolor: T.ink,
+            bgcolor: T.panel,
             p: { md: 4, lg: 5 },
             gap: 2,
           }}
@@ -329,9 +331,9 @@ export function LoginPage() {
               "& > div": { position: "absolute", borderRadius: "50%" },
             }}
           >
-            <Box sx={{ width: 460, height: 460, top: "4%", left: "-8%", bgcolor: T.signal, opacity: 0.5, animation: `${drift} 16s ease-in-out infinite` }} />
-            <Box sx={{ width: 380, height: 380, bottom: "2%", right: "-6%", bgcolor: T.risk, opacity: 0.32, animation: `${drift} 21s ease-in-out infinite reverse` }} />
-            <Box sx={{ width: 300, height: 300, top: "44%", left: "42%", bgcolor: T.retain, opacity: 0.24, animation: `${drift} 26s ease-in-out infinite` }} />
+            <Box sx={{ width: 460, height: 460, top: "4%", left: "-8%", bgcolor: T.signal, opacity: 0.22, animation: `${drift} 16s ease-in-out infinite` }} />
+            <Box sx={{ width: 380, height: 380, bottom: "2%", right: "-6%", bgcolor: T.risk, opacity: 0.12, animation: `${drift} 21s ease-in-out infinite reverse` }} />
+            <Box sx={{ width: 300, height: 300, top: "44%", left: "42%", bgcolor: T.retain, opacity: 0.14, animation: `${drift} 26s ease-in-out infinite` }} />
           </Box>
 
           {/* constellation */}
@@ -345,7 +347,7 @@ export function LoginPage() {
                 cx={`${x}%`}
                 cy={`${y}%`}
                 r="1.6"
-                fill="#fff"
+                fill={T.signal}
                 style={{ animation: `${twinkle} ${5 + (i % 4)}s ease-in-out ${i * 0.4}s infinite` }}
               />
             ))}
@@ -355,7 +357,7 @@ export function LoginPage() {
           <Box sx={{ position: "relative", display: "flex", alignItems: "center", gap: 1.5, ...enter(80) }}>
             <Mark />
             <Typography
-              sx={{ fontFamily: "'Space Grotesk', sans-serif", fontWeight: 600, fontSize: 17, letterSpacing: "-.01em", color: "#fff" }}
+              sx={{ fontFamily: "'Space Grotesk', sans-serif", fontWeight: 600, fontSize: 17, letterSpacing: "-.01em", color: T.ink }}
             >
               Churn Dashboard
             </Typography>
@@ -370,18 +372,18 @@ export function LoginPage() {
                 fontSize: "clamp(26px, min(3.1vw, 4vh), 40px)",
                 lineHeight: 1.1,
                 letterSpacing: "-.03em",
-                color: "#fff",
+                color: T.ink,
                 mb: 1.5,
                 ...enter(200),
               }}
             >
               See churn coming
-              <Box component="span" sx={{ display: "block", color: "rgba(255,255,255,.42)" }}>
+              <Box component="span" sx={{ display: "block", color: "rgba(20,22,43,0.5)" }}>
                 while you can still stop it.
               </Box>
             </Typography>
 
-            <Typography sx={{ fontSize: 14, lineHeight: 1.55, color: "rgba(255,255,255,.6)", mb: 2.5, ...enter(320) }}>
+            <Typography sx={{ fontSize: 14, lineHeight: 1.55, color: "rgba(20,22,43,0.68)", mb: 2.5, ...enter(320) }}>
               Every account is scored nightly. The model splits your book into the customers who stay and the ones
               quietly on their way out — so your team knows exactly who to call first.
             </Typography>
@@ -391,16 +393,16 @@ export function LoginPage() {
               sx={{
                 p: 2.25,
                 borderRadius: "20px",
-                border: "1px solid rgba(255,255,255,.12)",
-                bgcolor: "rgba(255,255,255,.055)",
+                border: "1px solid rgba(20,22,43,0.1)",
+                bgcolor: "rgba(20,22,43,0.055)",
                 backdropFilter: "blur(18px)",
-                boxShadow: "0 28px 70px -24px rgba(0,0,0,.65)",
+                boxShadow: "0 24px 60px -28px rgba(60,64,120,.35)",
                 ...enter(460),
               }}
             >
               <Box sx={{ display: "flex", justifyContent: "space-between", alignItems: "center", mb: 1.5 }}>
                 <Typography
-                  sx={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 11, letterSpacing: ".12em", textTransform: "uppercase", color: "rgba(255,255,255,.5)" }}
+                  sx={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 11, letterSpacing: ".12em", textTransform: "uppercase", color: "rgba(20,22,43,0.55)" }}
                 >
                   Retention forecast · 90d
                 </Typography>
@@ -411,7 +413,7 @@ export function LoginPage() {
                   ].map(([label, tone]) => (
                     <Box key={label} sx={{ display: "flex", alignItems: "center", gap: 0.7 }}>
                       <Box sx={{ width: 7, height: 7, borderRadius: "50%", bgcolor: tone as string }} />
-                      <Typography sx={{ fontSize: 11, color: "rgba(255,255,255,.62)" }}>{label}</Typography>
+                      <Typography sx={{ fontSize: 11, color: "rgba(20,22,43,0.68)" }}>{label}</Typography>
                     </Box>
                   ))}
                 </Box>
@@ -419,7 +421,7 @@ export function LoginPage() {
 
               <PredictionFork />
 
-              <Box sx={{ height: "1px", bgcolor: "rgba(255,255,255,.1)", my: 1.75 }} />
+              <Box sx={{ height: "1px", bgcolor: "rgba(20,22,43,0.1)", my: 1.75 }} />
 
               {scoredRows.map((row, i) => (
                 <ScoredRow key={row.name} row={row} index={i} isLast={i === scoredRows.length - 1} />
@@ -435,10 +437,10 @@ export function LoginPage() {
               [lastRefreshLabel, "last refresh"],
             ].map(([value, label]) => (
               <Box key={label}>
-                <Typography sx={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 18, color: "#fff", lineHeight: 1.2 }}>
+                <Typography sx={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 18, color: T.ink, lineHeight: 1.2 }}>
                   {value}
                 </Typography>
-                <Typography sx={{ fontSize: 11.5, color: "rgba(255,255,255,.45)" }}>{label}</Typography>
+                <Typography sx={{ fontSize: 11.5, color: "rgba(20,22,43,0.55)" }}>{label}</Typography>
               </Box>
             ))}
           </Box>
@@ -667,7 +669,7 @@ export function LoginPage() {
             <Box sx={{ mt: 3, display: "flex", alignItems: "center", justifyContent: "center", gap: 1.2, ...enter(520) }}>
               <Box sx={{ width: 6, height: 6, borderRadius: "50%", bgcolor: T.retain }} />
               <Typography sx={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 11.5, color: T.muted }}>
-                model v2.4.1 · scoring healthy
+                {stats ? `${stats.model_name} · v${stats.model_version} · scoring healthy` : "connecting…"}
               </Typography>
             </Box>
           </Box>
