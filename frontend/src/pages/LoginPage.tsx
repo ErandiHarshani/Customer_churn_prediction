@@ -14,6 +14,8 @@ import GlobalStyles from "@mui/material/GlobalStyles";
 import { useAuth } from "../context/AuthContext";
 import { getLoginStats } from "../api/dashboard";
 import { formatProbability } from "../utils/format";
+import { clearReturnState, peekReturnState } from "../utils/session";
+import { usePageTitle } from "../hooks/usePageTitle";
 import type { LoginStats } from "../types";
 
 /* ------------------------------------------------------------------ */
@@ -238,6 +240,9 @@ export function LoginPage() {
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // read once: where to go after signing in, and whether the session had expired
+  const [returnState] = useState(peekReturnState);
+  usePageTitle("Sign in");
   const [loading, setLoading] = useState(false);
   const [stats, setStats] = useState<LoginStats | null>(null);
 
@@ -264,7 +269,8 @@ export function LoginPage() {
     setLoading(true);
     try {
       await login(username, password);
-      navigate("/");
+      clearReturnState();
+      navigate(returnState.path ?? "/", { replace: true });
     } catch {
       setError("That username and password don't match. Check both and try again.");
     } finally {
@@ -597,6 +603,12 @@ export function LoginPage() {
                     }}
                   />
                 </Box>
+
+                {returnState.expired && !error && (
+                  <Alert severity="info" sx={{ mt: 2.4, borderRadius: "12px", fontSize: 13.5 }}>
+                    Your session expired — please sign in again to continue where you left off.
+                  </Alert>
+                )}
 
                 <Collapse in={Boolean(error)}>
                   <Alert
