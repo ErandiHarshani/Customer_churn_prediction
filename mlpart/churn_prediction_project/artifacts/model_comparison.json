@@ -1,20 +1,20 @@
 [
   {
-    "roc_auc": 0.976,
-    "f1": 0.8307,
-    "accuracy": 0.9432,
-    "precision": 0.8351,
-    "recall": 0.8263,
-    "threshold": 0.311,
-    "name": "XGBoost"
+    "roc_auc": 0.9692,
+    "f1": 0.7701,
+    "accuracy": 0.929,
+    "precision": 0.8481,
+    "recall": 0.7053,
+    "threshold": 0.405,
+    "name": "Random Forest"
   },
   {
-    "roc_auc": 0.9762,
-    "f1": 0.8509,
-    "accuracy": 0.9512,
-    "precision": 0.8771,
-    "recall": 0.8263,
-    "threshold": 0.367,
-    "name": "Random Forest"
+    "roc_auc": 0.967,
+    "f1": 0.803,
+    "accuracy": 0.9307,
+    "precision": 0.7718,
+    "recall": 0.8368,
+    "threshold": 0.295,
+    "name": "XGBoost"
   }
 ]

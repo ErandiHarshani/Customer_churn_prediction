@@ -30,6 +30,7 @@ class MLArtifacts:
 
         self.threshold_high: float = float(self.meta["threshold_high"])
         self.threshold_medium: float = float(self.meta["threshold_medium"])
+        self.min_reason_shap: float | None = self.meta.get("min_reason_shap")
         self.training_medians: dict = {**TRAINING_MEDIANS, **self.meta.get("training_medians", {})}
 
         if list(self.feature_columns) != list(FEATURE_COLS):

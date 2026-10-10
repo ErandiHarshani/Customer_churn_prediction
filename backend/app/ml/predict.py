@@ -43,9 +43,9 @@ def risk_level(prob: float, artifacts: MLArtifacts) -> str:
     return "low"
 
 
-# SHAP values are in log-odds. Contributions below this are noise-level (the
-# training set's 25th percentile of positive SHAP is ~0.06, median ~0.18), so they
-# are not reported as churn reasons.
+# Fallback only (XGBoost log-odds scale). The live cut-off is model_meta.json
+# "min_reason_shap", derived from the data at training time because the SHAP scale
+# depends on the model type.
 MIN_REASON_SHAP = 0.1
 
 
@@ -59,6 +59,8 @@ def describe_feature(feat: str, value, medians: dict | None = None) -> str:
     if feat in VALUE_AWARE_LABELS and value is not None and not pd.isna(value):
         low, high, unit = VALUE_AWARE_LABELS[feat]
         label = low if float(value) <= medians[feat] else high
+        if isinstance(unit, tuple):
+            unit = unit[0] if float(value) == 1 else unit[1]
         return f"{label} ({_fmt(float(value))}{unit})"
     if feat == "Complain":
         return "recent complaint filed" if value and float(value) > 0 else "no complaint filed"
@@ -76,6 +78,7 @@ def reason_impacts_for_row(
     behavioral_only: bool = True,
     medians: dict | None = None,
     exclude: frozenset[str] = frozenset(),
+    min_shap: float | None = None,
 ) -> list[dict]:
     """Top-n features meaningfully pushing this row toward churn, each with a label
     describing the customer's real value and impact_pct = that feature's share of the
@@ -96,7 +99,7 @@ def reason_impacts_for_row(
             "impact_pct": round((val / total) * 100, 1),
         }
         for feat, val in positive[:n]
-        if val >= MIN_REASON_SHAP
+        if val >= (MIN_REASON_SHAP if min_shap is None else min_shap)
     ]
 
 
@@ -111,12 +114,25 @@ def explain(
     by live prediction and by seeding (which passes out-of-fold values). `exclude`
     hides features that were imputed rather than observed (e.g. sentiment when the
     customer gave no review) so they are never presented as a reason."""
-    impacts = reason_impacts_for_row(
-        shap_row, raw_row, n=5, behavioral_only=True, medians=artifacts.training_medians, exclude=exclude
+    level = risk_level(prob, artifacts)
+    # A low-risk customer has no churn drivers worth acting on; listing the few
+    # features nudging a 0.1% probability upward reads as "reasons to churn".
+    impacts = (
+        []
+        if level == "low"
+        else reason_impacts_for_row(
+            shap_row,
+            raw_row,
+            n=5,
+            behavioral_only=True,
+            medians=artifacts.training_medians,
+            exclude=exclude,
+            min_shap=artifacts.min_reason_shap,
+        )
     )
     return {
         "churn_probability": float(prob),
-        "risk_level": risk_level(prob, artifacts),
+        "risk_level": level,
         "top_reasons": [r["label"] for r in impacts],
         "reason_impacts": impacts,
     }

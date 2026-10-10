@@ -53,6 +53,15 @@ SEED = 42
 N_FOLDS = 5
 TARGET = "Churn"
 MODEL_FILES = {"XGBoost": "xgb_churn_model.joblib", "Random Forest": "rf_churn_model.joblib"}
+# Every customer attribute in the source dataset (excluding CustomerID, the label and
+# the simulated review columns) — used only to detect duplicated records.
+SOURCE_COLS = [
+    "Tenure", "PreferredLoginDevice", "CityTier", "WarehouseToHome", "PreferredPaymentMode",
+    "Gender", "HourSpendOnApp", "NumberOfDeviceRegistered", "PreferedOrderCat",
+    "SatisfactionScore", "MaritalStatus", "NumberOfAddress", "Complain",
+    "OrderAmountHikeFromlastYear", "CouponUsed", "OrderCount", "DaySinceLastOrder",
+    "CashbackAmount",
+]
 
 
 def make_model(name: str):
@@ -148,10 +157,11 @@ def main() -> None:
     X = X.astype(float)
     y = df[TARGET].astype(int)
 
-    # Rows identical on every behavioural feature + label share a group, so they
-    # always land on the same side of any split.
-    behavioural = [c for c in FEATURE_COLS if c != "sentiment_score"]
-    groups = df[behavioural + [TARGET]].astype(str).agg("|".join, axis=1).values
+    # Rows identical on every original customer attribute + label (i.e. the same
+    # record duplicated under another CustomerID) share a group, so they always land
+    # on the same side of any split. Uses all source columns, not just the model's
+    # inputs: customers that merely share the model's inputs are different people.
+    groups = df[SOURCE_COLS + [TARGET]].astype(str).agg("|".join, axis=1).values
     n_duplicate_rows = int(pd.Series(groups).duplicated(keep=False).sum())
 
     # ---- held-out test split (used once, for reporting) -------------------
@@ -207,6 +217,10 @@ def main() -> None:
     scores.insert(0, "churn_probability", oof_all)
     scores.insert(0, "CustomerID", df["CustomerID"].values)
     scores.to_csv(out_dir / "customer_scores.csv", index=False)
+    # A SHAP contribution below this is too small to present as a churn reason. Taken
+    # from the data (40th percentile of all positive contributions) because the scale
+    # depends on the model: log-odds for XGBoost, probability for Random Forest.
+    min_reason_shap = round(float(np.percentile(shap_all[shap_all > 0], 40)), 4)
     print(f"[oof] all {len(X)} customers: AUC {roc_auc_score(y, oof_all):.4f}, mean p {oof_all.mean():.4f}")
 
     # ---- final serving models: refit on 100% of the data ------------------
@@ -230,6 +244,7 @@ def main() -> None:
         "feature_columns": list(FEATURE_COLS),
         "threshold_high": threshold_high,
         "threshold_medium": threshold_medium,
+        "min_reason_shap": min_reason_shap,
         "training_medians": {c: round(float(df[c].median()), 4) for c in NUMERIC_COLS},
         "category_values": {c: list(map(str, encoders[c].classes_)) for c in CATEGORICAL_COLS},
     }

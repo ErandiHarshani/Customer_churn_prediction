@@ -1,10 +1,11 @@
-# Ported verbatim from mlpart/02_model_training_shap_retention.ipynb (cells 6, 17).
-# Keep these in sync with the notebook if the model is ever retrained.
+# Model inputs. Reduced from the notebook's 19 to the 12 strongest behavioural /
+# account inputs plus review sentiment (Gender, login device, coupons used, hours on
+# app, order count and order-amount hike were dropped: together they added ~0.008
+# ROC-AUC in grouped cross-validation, but made the form much longer).
+# Keep in sync with mlpart/train_model.py, which imports these lists.
 
 CATEGORICAL_COLS = [
-    "PreferredLoginDevice",
     "PreferredPaymentMode",
-    "Gender",
     "PreferedOrderCat",
     "MaritalStatus",
 ]
@@ -13,14 +14,10 @@ NUMERIC_COLS = [
     "Tenure",
     "CityTier",
     "WarehouseToHome",
-    "HourSpendOnApp",
     "NumberOfDeviceRegistered",
     "SatisfactionScore",
     "NumberOfAddress",
     "Complain",
-    "OrderAmountHikeFromlastYear",
-    "CouponUsed",
-    "OrderCount",
     "DaySinceLastOrder",
     "CashbackAmount",
     "sentiment_score",
@@ -92,39 +89,30 @@ TRAINING_MEDIANS = {
     "sentiment_score": -0.4,
 }
 
-# (label when value <= median, label when value > median, unit shown after the value)
+# (label when value <= median, label when value > median, unit shown after the value).
+# A unit given as (singular, plural) is pluralised by value, e.g. "1 month" / "9 months".
 VALUE_AWARE_LABELS = {
-    "Tenure": ("short customer tenure", "long customer tenure", " months"),
-    "WarehouseToHome": ("short delivery distance", "long delivery distance", ""),
-    "HourSpendOnApp": ("low app engagement", "high app engagement", " hrs"),
+    "Tenure": ("short customer tenure", "long customer tenure", (" month", " months")),
+    "WarehouseToHome": ("short warehouse-to-home distance", "long warehouse-to-home distance", ""),
     "NumberOfDeviceRegistered": ("few registered devices", "many registered devices", ""),
     "SatisfactionScore": ("low satisfaction score", "high satisfaction score", "/5"),
     "NumberOfAddress": ("few saved addresses", "many saved addresses", ""),
-    "OrderAmountHikeFromlastYear": ("small spend increase vs. last year", "large spend increase vs. last year", "%"),
-    "CouponUsed": ("low coupon usage", "high coupon usage", ""),
-    "OrderCount": ("few orders placed", "many orders placed", ""),
-    "DaySinceLastOrder": ("recent last order", "long time since last order", " days"),
+    "DaySinceLastOrder": ("recent last order", "long time since last order", (" day", " days")),
     "CashbackAmount": ("low cashback earned", "high cashback earned", ""),
 }
 
 FEATURE_LABELS = {
     "Tenure": "short customer tenure",
     "CityTier": "city tier",
-    "WarehouseToHome": "long delivery distance",
-    "HourSpendOnApp": "low app engagement",
+    "WarehouseToHome": "long warehouse-to-home distance",
     "NumberOfDeviceRegistered": "few registered devices",
     "SatisfactionScore": "low satisfaction score",
     "NumberOfAddress": "few saved addresses",
     "Complain": "recent complaint filed",
-    "OrderAmountHikeFromlastYear": "reduced spend vs. last year",
-    "CouponUsed": "low coupon usage",
-    "OrderCount": "fewer orders placed",
     "DaySinceLastOrder": "long time since last order",
     "CashbackAmount": "low cashback earned",
     "sentiment_score": "negative review sentiment",
-    "PreferredLoginDevice": "login device pattern",
     "PreferredPaymentMode": "payment mode pattern",
-    "Gender": "gender",
     "PreferedOrderCat": "preferred order category",
     "MaritalStatus": "marital status",
 }
