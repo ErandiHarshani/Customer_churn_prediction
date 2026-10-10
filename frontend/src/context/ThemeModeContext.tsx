@@ -17,8 +17,8 @@ const EASE_OUT = "cubic-bezier(0.23, 1, 0.32, 1)";
 
 function buildTheme(mode: PaletteMode) {
   const light = mode === "light";
-  // App chrome (top bar + sidebar): a soft indigo wash rather than plain white.
-  const chrome = light ? "#e8ebfb" : "#171b2b";
+  // Brand presence: indigo top bar, indigo-tinted sidebar, white cards on a pale page.
+  const sidebar = light ? "#eceffd" : "#171b2b";
   return createTheme({
     palette: {
       mode,
@@ -38,7 +38,7 @@ function buildTheme(mode: PaletteMode) {
     },
     shape: { borderRadius: 10 },
     typography: {
-      fontFamily: '"Inter", "Roboto", system-ui, -apple-system, "Segoe UI", sans-serif',
+      fontFamily: '"Roboto", system-ui, -apple-system, "Segoe UI", sans-serif',
       h5: { fontWeight: 650, letterSpacing: "-0.01em" },
       h4: { fontWeight: 650, letterSpacing: "-0.01em" },
       subtitle1: { fontWeight: 600 },
@@ -49,21 +49,21 @@ function buildTheme(mode: PaletteMode) {
       MuiCssBaseline: {
         styleOverrides: { body: { WebkitFontSmoothing: "antialiased" } },
       },
-      // Flat, light app bar instead of a heavy coloured block.
+      // Indigo top bar with white text (light mode); flat, no shadow.
       MuiAppBar: {
         defaultProps: { elevation: 0, color: "inherit" },
         styleOverrides: {
           root: ({ theme }) => ({
-            backgroundColor: chrome,
-            color: theme.palette.text.primary,
-            borderBottom: `1px solid ${light ? "#dadff6" : theme.palette.divider}`,
+            backgroundColor: light ? theme.palette.primary.main : "#171b2b",
+            color: light ? "#ffffff" : theme.palette.text.primary,
+            borderBottom: light ? "none" : `1px solid ${theme.palette.divider}`,
           }),
         },
       },
       MuiDrawer: {
         styleOverrides: {
           paper: ({ theme }) => ({
-            backgroundColor: chrome,
+            backgroundColor: sidebar,
             borderRight: `1px solid ${light ? "#dadff6" : theme.palette.divider}`,
           }),
         },
@@ -92,11 +92,11 @@ function buildTheme(mode: PaletteMode) {
           root: ({ theme }) => ({
             borderRadius: 8,
             margin: "2px 8px",
-            "&.Mui-selected": {
-              backgroundColor: light ? "#ffffff" : theme.palette.action.selected,
-              boxShadow: light ? "0 1px 2px rgba(16,24,40,0.06)" : "none",
-              color: theme.palette.primary.main,
-              "& .MuiListItemIcon-root": { color: theme.palette.primary.main },
+            // active nav item: solid brand pill
+            "&.Mui-selected, &.Mui-selected:hover": {
+              backgroundColor: theme.palette.primary.main,
+              color: theme.palette.primary.contrastText,
+              "& .MuiListItemIcon-root": { color: theme.palette.primary.contrastText },
             },
           }),
         },
