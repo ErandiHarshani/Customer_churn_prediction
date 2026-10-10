@@ -41,9 +41,11 @@ export function SendSmsPanel({
   async function handleSavePhone() {
     setSavingPhone(true);
     setError(null);
+    setSuccess(null);
     try {
       await updateCustomerPhone(customerId, phoneInput);
       onPhoneUpdated(phoneInput);
+      setSuccess("Phone number saved.");
     } catch {
       setError("Could not save phone number.");
     } finally {
@@ -59,7 +61,7 @@ export function SendSmsPanel({
       const result = await sendSms(customerId);
       setSuccess(
         result.dry_run
-          ? "Dry-run: no real SMS was sent (DRY_RUN=true on the backend)."
+          ? "Dry-run mode is on (SMS Gateway Setup) — no real SMS was sent."
           : "SMS sent successfully."
       );
       onSent();
