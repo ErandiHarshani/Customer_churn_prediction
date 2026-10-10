@@ -76,9 +76,7 @@ def get_field_options(
     lists (the model has never seen anything else)."""
     enc = artifacts.label_encoders
     return CustomerFieldOptions(
-        preferred_login_device=list(enc["PreferredLoginDevice"].classes_),
         preferred_payment_mode=list(enc["PreferredPaymentMode"].classes_),
-        gender=list(enc["Gender"].classes_),
         prefered_order_cat=list(enc["PreferedOrderCat"].classes_),
         marital_status=list(enc["MaritalStatus"].classes_),
     )
@@ -164,26 +162,21 @@ def create_customer(
         exclude = frozenset({"sentiment_score"})
 
     categories = {
-        "PreferredLoginDevice": normalize_category("PreferredLoginDevice", payload.preferred_login_device),
         "PreferredPaymentMode": normalize_category("PreferredPaymentMode", payload.preferred_payment_mode),
-        "Gender": normalize_category("Gender", payload.gender),
         "PreferedOrderCat": normalize_category("PreferedOrderCat", payload.prefered_order_cat),
         "MaritalStatus": normalize_category("MaritalStatus", payload.marital_status),
     }
 
+    # exactly the model's inputs (app.ml.features.FEATURE_COLS)
     raw_row = pd.Series(
         {
             "Tenure": payload.tenure,
             "CityTier": payload.city_tier,
             "WarehouseToHome": payload.warehouse_to_home,
-            "HourSpendOnApp": payload.hour_spend_on_app,
             "NumberOfDeviceRegistered": payload.number_of_device_registered,
             "SatisfactionScore": payload.satisfaction_score,
             "NumberOfAddress": payload.number_of_address,
             "Complain": payload.complain,
-            "OrderAmountHikeFromlastYear": payload.order_amount_hike_from_last_year,
-            "CouponUsed": payload.coupon_used,
-            "OrderCount": payload.order_count,
             "DaySinceLastOrder": payload.day_since_last_order,
             "CashbackAmount": payload.cashback_amount,
             "sentiment_score": sentiment_score,
@@ -200,9 +193,9 @@ def create_customer(
         tenure=payload.tenure,
         city_tier=payload.city_tier,
         warehouse_to_home=payload.warehouse_to_home,
-        preferred_login_device=categories["PreferredLoginDevice"],
+        preferred_login_device=normalize_category("PreferredLoginDevice", payload.preferred_login_device),
         preferred_payment_mode=categories["PreferredPaymentMode"],
-        gender=categories["Gender"],
+        gender=payload.gender,
         hour_spend_on_app=payload.hour_spend_on_app,
         number_of_device_registered=payload.number_of_device_registered,
         prefered_order_cat=categories["PreferedOrderCat"],
