@@ -1,4 +1,4 @@
-import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
+import { BrowserRouter, Routes, Route } from "react-router-dom";
 import { ThemeModeProvider } from "./context/ThemeModeContext";
 import { AuthProvider } from "./context/AuthContext";
 import { ProtectedRoute } from "./routes/ProtectedRoute";
@@ -9,10 +9,15 @@ import { CustomerListPage } from "./pages/CustomerListPage";
 import { CustomerDetailPage } from "./pages/CustomerDetailPage";
 import { NewCustomerPage } from "./pages/NewCustomerPage";
 import { SmsGatewaySettingsPage } from "./pages/SmsGatewaySettingsPage";
+import { NotFoundPage } from "./pages/NotFoundPage";
+import { ToastProvider } from "./components/feedback/ToastProvider";
+import { ConfirmProvider } from "./components/feedback/ConfirmProvider";
 
 function App() {
   return (
     <ThemeModeProvider>
+      <ToastProvider>
+      <ConfirmProvider>
       <BrowserRouter>
         <AuthProvider>
           <Routes>
@@ -24,12 +29,14 @@ function App() {
                 <Route path="/customers/new" element={<NewCustomerPage />} />
                 <Route path="/customers/:customerId" element={<CustomerDetailPage />} />
                 <Route path="/settings/sms-gateway" element={<SmsGatewaySettingsPage />} />
+                <Route path="*" element={<NotFoundPage />} />
               </Route>
             </Route>
-            <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
         </AuthProvider>
       </BrowserRouter>
+      </ConfirmProvider>
+      </ToastProvider>
     </ThemeModeProvider>
   );
 }
