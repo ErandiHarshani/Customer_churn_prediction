@@ -46,20 +46,33 @@ const EMPTY_FORM: CreateCustomerRequest = {
   last_product_purchased: "",
 };
 
-const NUMERIC_FIELDS: { key: keyof CreateCustomerRequest; label: string }[] = [
-  { key: "tenure", label: "Tenure (months)" },
-  { key: "city_tier", label: "City tier (1-3)" },
-  { key: "warehouse_to_home", label: "Warehouse to home distance" },
-  { key: "hour_spend_on_app", label: "Hours spent on app" },
-  { key: "number_of_device_registered", label: "Devices registered" },
-  { key: "satisfaction_score", label: "Satisfaction score (1-5)" },
-  { key: "number_of_address", label: "Saved addresses" },
-  { key: "order_amount_hike_from_last_year", label: "Order amount hike vs last year (%)" },
-  { key: "coupon_used", label: "Coupons used" },
-  { key: "order_count", label: "Order count" },
-  { key: "day_since_last_order", label: "Days since last order" },
-  { key: "cashback_amount", label: "Cashback amount" },
+// min/max mirror the backend's CreateCustomerRequest limits (app/schemas/customer.py)
+const NUMERIC_FIELDS: { key: keyof CreateCustomerRequest; label: string; min: number; max: number }[] = [
+  { key: "tenure", label: "Tenure (months)", min: 0, max: 600 },
+  { key: "city_tier", label: "City tier (1-3)", min: 1, max: 3 },
+  { key: "warehouse_to_home", label: "Warehouse to home distance", min: 0, max: 1000 },
+  { key: "hour_spend_on_app", label: "Hours spent on app", min: 0, max: 24 },
+  { key: "number_of_device_registered", label: "Devices registered", min: 0, max: 50 },
+  { key: "satisfaction_score", label: "Satisfaction score (1-5)", min: 1, max: 5 },
+  { key: "number_of_address", label: "Saved addresses", min: 0, max: 100 },
+  { key: "order_amount_hike_from_last_year", label: "Order amount hike vs last year (%)", min: -100, max: 1000 },
+  { key: "coupon_used", label: "Coupons used", min: 0, max: 1000 },
+  { key: "order_count", label: "Order count", min: 0, max: 10000 },
+  { key: "day_since_last_order", label: "Days since last order", min: 0, max: 3650 },
+  { key: "cashback_amount", label: "Cashback amount", min: 0, max: 100000 },
 ];
+
+// FastAPI returns either a string detail or a list of pydantic validation errors.
+function errorMessage(e: unknown, fallback: string): string {
+  const detail = (e as { response?: { data?: { detail?: unknown } } })?.response?.data?.detail;
+  if (typeof detail === "string") return detail;
+  if (Array.isArray(detail) && detail.length > 0) {
+    return detail
+      .map((d: { loc?: (string | number)[]; msg?: string }) => `${d.loc?.slice(-1)[0] ?? "field"}: ${d.msg}`)
+      .join("; ");
+  }
+  return fallback;
+}
 
 function SentimentIcon({ label }: { label: string | null }) {
   if (label === "negative") return <SentimentDissatisfiedIcon color="error" fontSize="large" />;
@@ -75,9 +88,12 @@ export function NewCustomerPage() {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<CustomerDetail | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   useEffect(() => {
-    getCustomerFieldOptions().then(setOptions);
+    getCustomerFieldOptions()
+      .then(setOptions)
+      .catch((e) => setLoadError(errorMessage(e, "Could not load the form options from the server.")));
   }, []);
 
   function setField<K extends keyof CreateCustomerRequest>(key: K, value: CreateCustomerRequest[K]) {
@@ -98,11 +114,15 @@ export function NewCustomerPage() {
     try {
       const created = await createCustomer({ ...form, complain: complain ? 1 : 0 });
       setResult(created);
-    } catch {
-      setError("Could not run the prediction. Please check the values and try again.");
+    } catch (e) {
+      setError(errorMessage(e, "Could not run the prediction. Please check the values and try again."));
     } finally {
       setSubmitting(false);
     }
+  }
+
+  if (loadError) {
+    return <Alert severity="error">{loadError}</Alert>;
   }
 
   if (!options) {
@@ -141,6 +161,7 @@ export function NewCustomerPage() {
                         size="small"
                         value={form[f.key] as number}
                         onChange={(e) => setField(f.key, Number(e.target.value) as never)}
+                        slotProps={{ htmlInput: { min: f.min, max: f.max, step: "any" } }}
                       />
                     </Grid>
                   ))}
@@ -344,10 +365,17 @@ export function NewCustomerPage() {
                             <Typography variant="body1" sx={{ textTransform: "capitalize" }}>
                               {result.profile.sentiment_label ?? "n/a"}
                             </Typography>
-                            {result.profile.sentiment_score !== null && (
+                            {result.profile.sentiment_label === "not provided" ||
+                            result.profile.sentiment_label === "unavailable" ? (
                               <Typography variant="caption" color="text.secondary">
-                                score {result.profile.sentiment_score.toFixed(2)}
+                                no review scored — model used the dataset median
                               </Typography>
+                            ) : (
+                              result.profile.sentiment_score !== null && (
+                                <Typography variant="caption" color="text.secondary">
+                                  score {result.profile.sentiment_score.toFixed(2)}
+                                </Typography>
+                              )
                             )}
                           </Box>
                         </Stack>

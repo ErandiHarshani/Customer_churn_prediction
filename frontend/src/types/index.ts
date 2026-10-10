@@ -5,6 +5,9 @@ export interface ModelMetric {
   f1: number;
   roc_auc: number;
   accuracy: number;
+  precision?: number | null;
+  recall?: number | null;
+  threshold?: number | null;
 }
 
 export interface RiskDistribution {
@@ -24,6 +27,9 @@ export interface DashboardSummary {
   predicted_churn_rate: number;
   best_model_accuracy: number;
   best_model_name: string;
+  model_version?: string | null;
+  risk_threshold_high?: number | null;
+  risk_threshold_medium?: number | null;
   risk_distribution: RiskDistribution;
   churn_distribution: ChurnDistribution;
   model_metrics: ModelMetric[];

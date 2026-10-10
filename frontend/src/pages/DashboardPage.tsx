@@ -180,14 +180,20 @@ export function DashboardPage() {
               </Typography>
               {curves && <RocCurveChart curves={curves} />}
               <Typography variant="caption" color="text.secondary">
-                Computed live from the two trained models (XGBoost, Random Forest) against a
-                held-out test split.
+                XGBoost vs Random Forest on the held-out 20% test split (never used for training
+                or model selection).
               </Typography>
             </CardContent>
           </Card>
         </Grid>
         <Grid size={{ xs: 12, md: 4 }}>
-          <ModelMetricsCard metrics={summary.model_metrics} bestModelName={summary.best_model_name} />
+          <ModelMetricsCard
+            metrics={summary.model_metrics}
+            bestModelName={summary.best_model_name}
+            modelVersion={summary.model_version}
+            thresholdHigh={summary.risk_threshold_high}
+            thresholdMedium={summary.risk_threshold_medium}
+          />
         </Grid>
       </Grid>
 
