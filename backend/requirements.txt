@@ -1,0 +1,15 @@
+fastapi
+uvicorn[standard]
+sqlalchemy
+pydantic-settings
+python-jose[cryptography]
+bcrypt
+python-multipart
+httpx
+pandas
+numpy
+scikit-learn
+xgboost==2.1.4
+shap
+joblib
+google-genai
