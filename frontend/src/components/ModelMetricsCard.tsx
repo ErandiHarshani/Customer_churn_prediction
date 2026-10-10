@@ -2,6 +2,7 @@ import Card from "@mui/material/Card";
 import CardContent from "@mui/material/CardContent";
 import Typography from "@mui/material/Typography";
 import Table from "@mui/material/Table";
+import TableContainer from "@mui/material/TableContainer";
 import TableBody from "@mui/material/TableBody";
 import TableCell from "@mui/material/TableCell";
 import TableHead from "@mui/material/TableHead";
@@ -33,7 +34,8 @@ export function ModelMetricsCard({
         <Typography variant="subtitle1" gutterBottom>
           Model performance
         </Typography>
-        <Table size="small">
+        <TableContainer sx={{ overflowX: "auto" }}>
+        <Table size="small" sx={{ "& td, & th": { px: 1, whiteSpace: "nowrap" } }}>
           <TableHead>
             <TableRow>
               <TableCell>Model</TableCell>
@@ -57,6 +59,7 @@ export function ModelMetricsCard({
             ))}
           </TableBody>
         </Table>
+        </TableContainer>
         <Typography variant="caption" color="text.secondary" sx={{ display: "block", mt: 1 }}>
           Held-out test set (20%, duplicate rows kept on one side of the split). Accuracy, precision,
           recall and F1 at each model's decision threshold

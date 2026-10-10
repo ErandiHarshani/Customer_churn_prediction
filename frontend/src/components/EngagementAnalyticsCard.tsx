@@ -57,8 +57,11 @@ function MiniStat({
 
 export function EngagementAnalyticsCard({ data }: { data: EngagementAnalytics }) {
   const { sms_stats, retention_stats, recent_sms } = data;
-  const successRate =
-    sms_stats.total_sent > 0 ? (sms_stats.successful / sms_stats.total_sent) * 100 : 0;
+  // Only real sends reach the provider; dry-runs are simulated and always "succeed".
+  const submissionRate =
+    sms_stats.real_count > 0
+      ? `${((sms_stats.real_successful / sms_stats.real_count) * 100).toFixed(0)}%`
+      : "—";
 
   return (
     <Card variant="outlined">
@@ -71,7 +74,7 @@ export function EngagementAnalyticsCard({ data }: { data: EngagementAnalytics })
           <Grid size={{ xs: 12, sm: 4 }}>
             <MiniStat
               icon={<SmsIcon />}
-              label="SMS sent"
+              label="SMS attempts"
               value={sms_stats.total_sent}
               color="#7c6cf6"
             />
@@ -79,8 +82,8 @@ export function EngagementAnalyticsCard({ data }: { data: EngagementAnalytics })
           <Grid size={{ xs: 12, sm: 4 }}>
             <MiniStat
               icon={<CheckCircleIcon />}
-              label="Delivery success rate"
-              value={`${successRate.toFixed(0)}%`}
+              label={sms_stats.real_count > 0 ? "Submission success (real sends)" : "Submission success (dry-run only)"}
+              value={submissionRate}
               color="#2e7d32"
             />
           </Grid>
@@ -151,8 +154,8 @@ export function EngagementAnalyticsCard({ data }: { data: EngagementAnalytics })
                   <TableCell>
                     <Chip
                       size="small"
-                      label={entry.success ? "sent" : "failed"}
-                      color={entry.success ? "success" : "error"}
+                      label={entry.dry_run ? "simulated" : entry.success ? "submitted" : "failed"}
+                      color={entry.dry_run ? "default" : entry.success ? "success" : "error"}
                     />
                   </TableCell>
                   <TableCell>

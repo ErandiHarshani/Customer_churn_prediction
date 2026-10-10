@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import Grid from "@mui/material/Grid";
 import Card from "@mui/material/Card";
 import CardContent from "@mui/material/CardContent";
+import CardActionArea from "@mui/material/CardActionArea";
 import Typography from "@mui/material/Typography";
 import CircularProgress from "@mui/material/CircularProgress";
 import Box from "@mui/material/Box";
@@ -51,6 +52,13 @@ export function DashboardPage() {
   if (!summary) {
     return <Typography color="error">Could not load dashboard data.</Typography>;
   }
+
+  const datasetCustomers = summary.churn_distribution.churn + summary.churn_distribution.non_churn;
+  const addedCustomers = summary.total_customers - datasetCustomers;
+  const datasetSubtitle =
+    addedCustomers > 0
+      ? `${datasetCustomers.toLocaleString()} from dataset · ${addedCustomers.toLocaleString()} added`
+      : "all from the dataset";
 
   return (
     <Box>
@@ -107,15 +115,15 @@ export function DashboardPage() {
             title="Total Customers"
             value={summary.total_customers.toLocaleString()}
             icon={<PeopleAltIcon color="primary" />}
-            subtitle="100% of dataset"
+            subtitle={datasetSubtitle}
           />
         </Grid>
         <Grid size={{ xs: 12, sm: 6, md: 3 }}>
-          <Card
-            variant="outlined"
-            sx={{ height: "100%", cursor: "pointer" }}
-            onClick={() => navigate("/customers?risk_level=high")}
-          >
+          <Card variant="outlined" sx={{ height: "100%" }}>
+            <CardActionArea
+              onClick={() => navigate("/customers?risk_level=high")}
+              sx={{ height: "100%", display: "flex", flexDirection: "column", alignItems: "stretch", justifyContent: "flex-start" }}
+            >
             <CardContent>
               <Box sx={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
                 <Typography variant="body2" color="text.secondary">
@@ -131,6 +139,7 @@ export function DashboardPage() {
                 total — click to view
               </Typography>
             </CardContent>
+            </CardActionArea>
           </Card>
         </Grid>
         <Grid size={{ xs: 12, sm: 6, md: 3 }}>
@@ -146,7 +155,7 @@ export function DashboardPage() {
             title="Model Accuracy"
             value={`${(summary.best_model_accuracy * 100).toFixed(1)}%`}
             icon={<VerifiedIcon color="success" />}
-            subtitle="best model, held-out test set"
+            subtitle={`${summary.best_model_name} · chosen by cross-validation · test set`}
           />
         </Grid>
       </Grid>
@@ -156,9 +165,12 @@ export function DashboardPage() {
           <Card variant="outlined" sx={{ height: "100%" }}>
             <CardContent>
               <Typography variant="subtitle1" gutterBottom>
-                Churn Distribution
+                Actual churn (dataset)
               </Typography>
               <ChurnDistributionChart data={summary.churn_distribution} />
+              <Typography variant="caption" color="text.secondary" sx={{ display: "block", mt: 2 }}>
+                Known outcomes only — newly added customers have no outcome yet.
+              </Typography>
             </CardContent>
           </Card>
         </Grid>
@@ -166,13 +178,16 @@ export function DashboardPage() {
           <Card variant="outlined" sx={{ height: "100%" }}>
             <CardContent>
               <Typography variant="subtitle1" gutterBottom>
-                Risk Level Distribution
+                Predicted risk levels
               </Typography>
-              <RiskDistributionChart data={summary.risk_distribution} />
+              <RiskDistributionChart
+                data={summary.risk_distribution}
+                onSelect={(level) => navigate(`/customers?risk_level=${level}`)}
+              />
             </CardContent>
           </Card>
         </Grid>
-        <Grid size={{ xs: 12, md: 8 }}>
+        <Grid size={{ xs: 12, lg: 6 }}>
           <Card variant="outlined" sx={{ height: "100%" }}>
             <CardContent>
               <Typography variant="subtitle1" gutterBottom>
@@ -186,7 +201,7 @@ export function DashboardPage() {
             </CardContent>
           </Card>
         </Grid>
-        <Grid size={{ xs: 12, md: 4 }}>
+        <Grid size={{ xs: 12, lg: 6 }}>
           <ModelMetricsCard
             metrics={summary.model_metrics}
             bestModelName={summary.best_model_name}
